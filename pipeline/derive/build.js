@@ -113,7 +113,8 @@ export function buildSeason(input) {
       .filter((x) => x.minute !== null && x.value !== null).sort((a, b) => a.minute - b.minute);
     const xgRace = (fcXgMinuteByMatch.get(m.match_id) || []).map((x) => ({ minute: num(x.minute), spurs: num(home ? x.home_cumulative_xg : x.away_cumulative_xg), opp: num(home ? x.away_cumulative_xg : x.home_cumulative_xg) }))
       .filter((x) => x.minute !== null).sort((a, b) => a.minute - b.minute);
-    const det = { source: 'fplcore', key: m.match_id, spurs: teamSide(m, home ? 'home' : 'away'), opp: teamSide(m, home ? 'away' : 'home'), shots, processed, momentum, xgRace };
+    const fotmobUrl = m.match_url && /^\/matches\//.test(m.match_url) ? `https://www.fotmob.com${m.match_url}` : null;
+    const det = { source: 'fplcore', key: m.match_id, fotmobUrl, spurs: teamSide(m, home ? 'home' : 'away'), opp: teamSide(m, home ? 'away' : 'home'), shots, processed, momentum, xgRace };
     if (comp === 'Premier League') {
       const f = fixtures.find((x) => x.source === 'fpl' && x.gameweek === num(m.gameweek) && oppTeam && x.opponentTeamId === oppTeam.id)
         || fixtures.find((x) => x.source === 'fpl' && x.kickoff && m.kickoff_time && Math.abs(Date.parse(x.kickoff) - Date.parse(`${m.kickoff_time}Z`)) < 48 * 3600e3 && oppTeam && x.opponentTeamId === oppTeam.id);
