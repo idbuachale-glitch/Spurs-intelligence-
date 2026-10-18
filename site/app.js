@@ -132,6 +132,13 @@ const per = (v, dp = 2) => fmt(v, dp);
 const statDefs = () => state.meta.statDefs;
 
 // ---------------- Overview ----------------
+// Per-match descriptions for interactive charts (team match rows from team.json).
+const matchPoints = (ms) => ms.map((m) => ({
+  title: `${m.home ? 'v' : '@'} ${m.opponent}`,
+  sub: `${fmtDate(m.kickoff, { weekday: 'short', day: 'numeric', month: 'short' })} · Premier League`,
+  result: m.result, score: m.gf !== null && m.gf !== undefined ? `${m.gf}–${m.ga}` : '',
+  links: [['Match breakdown', `#/breakdown/${encodeURIComponent(m.matchId)}`], ['Match Centre', `#/match/${encodeURIComponent(m.matchId)}`]],
+}));
 const VIEWS = {};
 const AFTER = {};
 
@@ -164,7 +171,7 @@ VIEWS.overview = async () => {
     <div class="panel"><h2>Recent form</h2><div class="form-strip">${team.formAllComps.map((f) => `<a href="#/match/${encodeURIComponent(f.matchId)}" title="${esc(f.opponent)} (${esc(f.competition)})">${resultChip(f.result)}</a>`).join('') || '<span class="na">No matches yet</span>'}</div>
       <p class="small muted" style="margin-top:10px">Last ${team.formAllComps.length} competitive matches, oldest first. Last five PL: ${team.last5.w}W ${team.last5.d}D ${team.last5.l}L.</p>
       <h3 style="margin-top:18px">Chance quality, match by match</h3>
-      ${lineChart({ labels: team.matches.map((m) => m.opponentShort || m.opponent.slice(0, 3)), series: [{ name: 'xG for', color: 'var(--cyan)', values: team.matches.map((m) => m.xg) }, { name: 'xG against', color: 'var(--loss)', values: team.matches.map((m) => m.xga) }], height: 200, format: (v) => v.toFixed(1) })}
+      ${lineChart({ labels: team.matches.map((m) => m.opponentShort || m.opponent.slice(0, 3)), series: [{ name: 'xG for', color: 'var(--cyan)', values: team.matches.map((m) => m.xg) }, { name: 'xG against', color: 'var(--loss)', values: team.matches.map((m) => m.xga) }], height: 200, format: (v) => v.toFixed(2), points: matchPoints(team.matches), title: 'Chance quality, match by match' })}
     </div>
     <div class="panel"><h2>Leading performers</h2>
       <h3 class="muted small" style="font-family:var(--body);font-weight:500">Goals + assists (PL)${state.season === state.seasons.current ? ', current squad' : ''}</h3>
@@ -295,6 +302,24 @@ AFTER.players = async () => {
   draw();
 };
 
+// Strengths & weaknesses vs every Premier League player in the same position.
+const swPanel = (p, prof) => {
+  if (!prof) return '';
+  if (!prof.metrics.length) return `<div class="panel section"><h2>Strengths & weaknesses</h2><p class="muted">Not enough Premier League minutes yet to compare ${esc(p.web)} fairly (needs ${prof.minMinutes}+ minutes; he has ${prof.minutes ?? 0}). This fills in automatically as he plays.</p></div>`;
+  const val = (m) => (m.kind === 'rate' ? `${fmt(m.value, 0)}%` : `${fmt(m.value, 2)} per 90`);
+  const avg = (m) => (m.leagueAvg === null ? '' : ` · league avg ${m.kind === 'rate' ? `${fmt(m.leagueAvg, 0)}%` : fmt(m.leagueAvg, 2)}`);
+  const item = (m, good) => `<li class="sw-item ${good ? 'up' : 'down'}"><div class="sw-top"><strong>${esc(m.label)}</strong><span class="sw-score">${good ? 'Top' : 'Bottom'} ${good ? 100 - m.score || 1 : m.score || 1}%</span></div>
+    <div class="sw-bar"><i style="width:${m.score}%"></i></div><span class="sw-meta">${esc(m.good && good ? cap(m.good) : cap(m.bad))} · ${val(m)}${avg(m)}${m.lowerIsBetter ? ' (lower is better)' : ''}</span></li>`;
+  const all = prof.metrics.map((m) => `<tr><td class="wrap">${esc(m.label)}</td><td class="r">${m.kind === 'rate' ? `${fmt(m.value, 0)}%` : fmt(m.value, 2)}</td><td class="r">${m.leagueAvg === null ? '—' : m.kind === 'rate' ? `${fmt(m.leagueAvg, 0)}%` : fmt(m.leagueAvg, 2)}</td><td class="r"><span class="sw-chip ${m.score >= 70 ? 'up' : m.score <= 30 ? 'down' : ''}">${m.score}</span></td></tr>`).join('');
+  return `<div class="panel section sw"><div class="section-head"><h2>Strengths & weaknesses</h2><span class="label-analysis">Calculated, not official</span></div>
+    <p class="sw-text">${esc(prof.text)}</p>
+    <div class="grid two"><div><h3 class="sw-h up">Strengths</h3>${prof.strengths.length ? `<ul class="sw-list">${prof.strengths.map((m) => item(m, true)).join('')}</ul>` : '<p class="small muted">Nothing clearly above the league norm for his position yet.</p>'}</div>
+    <div><h3 class="sw-h down">Weaknesses</h3>${prof.weaknesses.length ? `<ul class="sw-list">${prof.weaknesses.map((m) => item(m, false)).join('')}</ul>` : '<p class="small muted">Nothing clearly below the league norm for his position.</p>'}</div></div>
+    <details class="sw-all"><summary>All ${prof.metrics.length} measures compared</summary><div class="table-wrap"><table><thead><tr><th>Measure</th><th class="r">${esc(p.web)}</th><th class="r">League avg</th><th class="r">Score (0–100)</th></tr></thead><tbody>${all}</tbody></table></div>
+    <p class="source">Score = how he compares with Premier League ${esc(prof.posWord || '')} who have played ${prof.minMinutes}+ minutes: 100 is the best in the league, 50 is average. Where fewer is better (fouls, being dribbled past, being dispossessed) the score is flipped. FPL lists full-backs and centre-backs together as defenders, so a centre-back can look weak on crossing.</p></details>
+    <p class="source">${esc(prof.label)} Based on ${prof.minutes ?? '—'} Premier League minutes${(prof.minutes ?? 0) < 450 ? '; still a small sample, so treat it as an early read' : ''}.</p></div>`;
+};
+const cap = (t) => (t ? t[0].toUpperCase() + t.slice(1) : '');
 const spDuties = (p) => { const sp = p.setPieces; if (!sp) return ''; return [['penalties', 'Penalties'], ['freeKicks', 'Direct free kicks'], ['corners', 'Corners & indirect free kicks']].filter(([k]) => sp[k]).map(([k, l]) => `${l} <strong>${ordinal(sp[k])} choice</strong>`).join(' · '); };
 VIEWS.player = async (id) => {
   const idx = (state.index ||= (await load('players-index.json')).players).find((p) => p.id === id);
@@ -330,6 +355,7 @@ VIEWS.player = async (id) => {
     <div class="panel stat-tile"><span class="lbl">${isGK ? 'Clean sheets' : 'Goals / assists'}</span><span class="big">${isGK ? fmt(p.season.totals.cs) : `${p.season.totals.goals ?? 0} / ${p.season.totals.assists ?? 0}`}</span><span class="small muted">${isGK ? `${fmtPlain(p.season.totals.gc)} conceded` : `All competitive: ${p.seasonAll?.totals.goals ?? '—'} / ${p.seasonAll?.totals.assists ?? '—'}`}</span></div>
     <div class="panel stat-tile"><span class="lbl">${isGK ? 'Goals prevented (xGOT − goals)' : 'Goals minus xG'}</span><span class="big">${isGK ? fmt(p.season.totals.goalsPrevented, 2) : fmt(p.season.derived.goalsMinusXg, 2)}</span><span class="small muted">${isGK ? 'From FotMob post-shot model' : 'Positive = finishing above chance quality'}</span></div>
   </div>
+  ${swPanel(p, data.profile)}
   ${data.summary ? `<div class="panel section"><div class="section-head"><h2>Scouting summary</h2><span class="label-analysis">Calculated, not official</span></div><p>${esc(data.summary.text)}</p><p class="tiny faint">${esc(data.summary.label)}.</p></div>` : ''}
   <div class="grid two section">
     ${isGK ? block('Goalkeeping', 'goalkeeping', which) : block('Attacking', 'attacking', which)}
@@ -342,7 +368,8 @@ VIEWS.player = async (id) => {
   ${pct ? `<div class="panel section"><div class="section-head"><h2>Against Premier League ${esc(state.meta.posLabels[pct.pos].toLowerCase())}s</h2><span class="muted small">Percentile among ${pct.peers} with ${pct.minMinutes}+ minutes</span></div>
     ${Object.entries(pct.percentiles).filter(([, v]) => v !== null).map(([k, v]) => { const d = statDefs().find((x) => x.key === k); return `<div class="pbar"><span>${esc(d ? d.label : k)} /90</span><div class="track"><div class="fill" style="width:${v}%"></div></div><span class="num" style="text-align:right">${v}</span></div>`; }).join('')}
     <p class="source">Per-90 values from FPL season totals (all clubs, so a mid-season signing's figures include his previous PL club). For xG conceded and goals conceded, a lower percentile is better.</p></div>` : ''}
-  ${matches.length > 1 ? `<div class="panel section"><h2>Form, match by match</h2>${lineChart({ labels: matches.map((m) => fmtDate(m.kickoff, { day: 'numeric', month: 'short' })), series: isGK ? [{ name: 'Saves', color: 'var(--cyan)', values: matches.map((m) => m.saves ?? m.gkSaves) }, { name: 'Goals conceded', color: 'var(--loss)', values: matches.map((m) => m.gc) }] : [{ name: 'xG', color: 'var(--cyan)', values: matches.map((m) => m.xg) }, { name: 'xA', color: 'var(--draw)', values: matches.map((m) => m.xa) }], format: (v) => v.toFixed(isGK ? 0 : 1) })}</div>` : ''}
+  ${matches.length > 1 ? `<div class="panel section"><h2>Form, match by match</h2>${lineChart({ labels: matches.map((m) => fmtDate(m.kickoff, { day: 'numeric', month: 'short' })), series: isGK ? [{ name: 'Saves', color: 'var(--cyan)', values: matches.map((m) => m.saves ?? m.gkSaves) }, { name: 'Goals conceded', color: 'var(--loss)', values: matches.map((m) => m.gc) }] : [{ name: 'xG', color: 'var(--cyan)', values: matches.map((m) => m.xg) }, { name: 'xA', color: 'var(--draw)', values: matches.map((m) => m.xa) }], format: (v) => v.toFixed(isGK ? 0 : 2), title: `${p.web}, match by match`,
+    points: matches.map((m) => ({ title: `${m.home ? 'v' : '@'} ${oppName(m)}`, sub: `${fmtDate(m.kickoff, { weekday: 'short', day: 'numeric', month: 'short' })} · ${m.comp} · ${m.minutes ?? 0} min${m.goals ? ` · ${m.goals} goal${m.goals > 1 ? 's' : ''}` : ''}${m.assists ? ` · ${m.assists} assist${m.assists > 1 ? 's' : ''}` : ''}`, result: m.result, links: [['Match Centre', `#/match/${encodeURIComponent(m.matchId)}`], ...(m.comp === 'Premier League' ? [['Match breakdown', `#/breakdown/${encodeURIComponent(m.matchId)}`]] : [])] })) })}</div>` : ''}
   ${!isGK ? `<div class="panel section"><div class="section-head"><h2>Shot map</h2><select class="ctl" id="p-shot-match" aria-label="Match"><option value="">All matches (${(data.shots || []).length} shots)</option>${[...new Map((data.shots || []).map((x) => [x.matchId, x])).values()].map((x) => `<option value="${esc(x.matchId)}">${esc(fmtDate(x.kickoff, { day: 'numeric', month: 'short' }))} v ${esc(x.opponent)}</option>`).join('')}</select></div>
     <div id="p-shots">${shotMap(data.shots || [])}</div><p class="source">Shot locations from FotMob via FPL Core Insights, all competitions; updated after every match. About one shot in five has no player attached in the source and is not shown.</p></div>` : ''}
   <div class="panel section"><h2>Match log</h2><div class="table-wrap"><table data-sortable class="stack"><thead><tr><th class="sortable">Date</th><th>Match</th><th>Comp</th><th class="sortable r">Min</th><th class="sortable r">G</th><th class="sortable r">A</th><th class="sortable r">xG</th><th class="sortable r">xA</th><th class="sortable r">Shots</th><th class="sortable r">Chances</th><th class="sortable r">Recov.</th>${isGK ? '<th class="sortable r">Saves</th>' : ''}</tr></thead><tbody>
@@ -410,7 +437,7 @@ VIEWS.team = async () => {
     ${prevTeams.map((t, i) => (t ? blockRow(`${prev[i].replace('-', '/')} season`, t.overall) : '')).join('')}</tbody></table></div>
     <p class="source">xG against = xG conceded while on the pitch for a Spurs player who completed the match (FPL/Opta). Earlier seasons from the archived FPL dataset; xG exists from mid-2022/23.</p></div>
   <div class="panel section"><h2>All competitions</h2><div class="table-wrap"><table><thead><tr><th>Competition</th><th class="r">P</th><th class="r">W-D-L</th><th class="r">Goals</th></tr></thead><tbody>${Object.entries(team.byCompetition).map(([c, b]) => `<tr><td>${esc(c)}</td><td class="r">${b.n}</td><td class="r">${b.w}-${b.d}-${b.l}</td><td class="r">${b.gf}–${b.ga}</td></tr>`).join('')}</tbody></table></div></div>
-  <div class="panel section"><h2>xG trend</h2>${lineChart({ labels: team.matches.map((m) => m.opponentShort || m.opponent.slice(0, 3)), series: [{ name: 'xG for', color: 'var(--cyan)', values: team.matches.map((m) => m.xg) }, { name: 'xG against', color: 'var(--loss)', values: team.matches.map((m) => m.xga) }, { name: 'Goals for', color: 'var(--win)', values: team.matches.map((m) => m.gf), dash: true }], format: (v) => v.toFixed(1) })}</div>
+  <div class="panel section"><h2>xG trend</h2>${lineChart({ labels: team.matches.map((m) => m.opponentShort || m.opponent.slice(0, 3)), series: [{ name: 'xG for', color: 'var(--cyan)', values: team.matches.map((m) => m.xg) }, { name: 'xG against', color: 'var(--loss)', values: team.matches.map((m) => m.xga) }, { name: 'Goals for', color: 'var(--win)', values: team.matches.map((m) => m.gf), dash: true, fmt: (v) => String(v) }], format: (v) => v.toFixed(2), points: matchPoints(team.matches), title: 'xG trend' })}</div>
   ${adv ? `<div class="grid two section"><div class="panel"><h2>Per match, Spurs v opponents</h2>
     ${pairBars([
       { label: 'Possession', a: pm('possession').spurs.value, b: pm('possession').opp.value, unit: '%' },
@@ -855,9 +882,9 @@ VIEWS.style = async () => {
     }
     const col = /Improving/.test(verdict) ? 'var(--win)' : /worse/.test(verdict) ? 'var(--loss)' : 'var(--muted)';
     const series = [{ name: mt.label, color: 'var(--cyan)', values: vals }, { name: '3-match average', color: 'var(--draw)', values: roll(vals), dash: true }];
-    if (mt.league !== null && mt.league !== undefined) series.push({ name: 'League average', color: 'var(--faint)', values: vals.map(() => mt.league), dash: true });
+    if (mt.league !== null && mt.league !== undefined) series.push({ name: 'League average', color: 'var(--faint)', values: vals.map(() => mt.league), dash: true, ref: true });
     return `<div class="panel"><div class="section-head"><h3>${esc(mt.label)}</h3><span class="small" style="color:${col};font-weight:600">${esc(verdict)}</span></div>
-      ${lineChart({ labels, series, height: 200, format: (v) => v.toFixed(mt.dp ?? 0), readout: false })}<p class="small muted" style="margin-top:6px">${esc(mt.why)}</p></div>`;
+      ${lineChart({ labels, series, height: 200, format: (v) => v.toFixed(mt.dp ?? 0) + mt.unit, readout: false, points: matchPoints(ms), title: mt.label })}<p class="small muted" style="margin-top:6px">${esc(mt.why)}</p></div>`;
   };
   return `<div class="section-head"><h1>De Zerbi tracker</h1><span class="label-observed">Measured, match by match</span></div>
   <p class="muted">Is Spurs' play moving towards what De Zerbi's teams are known for: keeping the ball, playing in the opposition half, passing securely and creating good chances? Each chart shows every Premier League match this season, a three-match average and the league average. Trends compare the earlier matches with the more recent ones.</p>

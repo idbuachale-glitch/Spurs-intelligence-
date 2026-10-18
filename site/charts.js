@@ -3,7 +3,11 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 // Multi-series line chart with smooth curves, a soft area under the first series,
 // glowing lines and a headline readout of the latest values.
-export function lineChart({ series, labels, height = 230, yLabel = '', format = (v) => v.toFixed(1), readout = true }) {
+// `points` (optional): one entry per x position describing the match there —
+// { title, sub, result, score, links: [[label, href]] }. With it, the chart becomes
+// interactive: tap/hover a game to see every series' value for that game, step with
+// the arrows, and expand to full screen.
+export function lineChart({ series, labels, height = 230, yLabel = '', format = (v) => v.toFixed(1), readout = true, points = null, title = '' }) {
   const W = 640; const H = height; const pad = { l: 40, r: 16, t: 14, b: 34 };
   const all = series.flatMap((s) => s.values).filter((v) => v !== null && v !== undefined);
   if (!all.length || labels.length < 2) return '<div class="empty small">Not enough matches to chart yet.</div>';
@@ -39,8 +43,67 @@ export function lineChart({ series, labels, height = 230, yLabel = '', format = 
   });
   const last = (s) => [...s.values].reverse().find((v) => v !== null && v !== undefined);
   const head = readout ? `<div class="readout">${series.filter((s) => !s.dash).map((s) => `<div style="border-color:${s.color}"><span>${esc(s.name)}, latest</span><strong>${last(s) === undefined ? '—' : esc(format(last(s)))}</strong></div>`).join('')}</div>` : '';
-  return `<div class="chart">${head}<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(yLabel)}">${g}</svg>
-    <div class="legend">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div></div>`;
+  const legend = `<div class="legend">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div>`;
+  if (!points || points.length !== labels.length) return `<div class="chart">${head}<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(yLabel)}">${g}</svg>${legend}</div>`;
+  // Interactive layer: a full-height tap target per game, a highlight line and enlarged dots.
+  const step = labels.length > 1 ? (W - pad.l - pad.r) / (labels.length - 1) : W;
+  const hits = labels.map((_, i) => `<rect class="hit" data-pt="${i}" x="${Math.max(0, x(i) - step / 2)}" y="0" width="${step}" height="${H}" fill="transparent"><title>${esc(points[i].title)}</title></rect>`).join('');
+  const marks = labels.map((_, i) => `<g class="pt-mark${i === labels.length - 1 ? ' on' : ''}" data-mark="${i}">${series.filter((s) => !s.dash).map((s) => (s.values[i] === null || s.values[i] === undefined ? '' : `<circle cx="${x(i)}" cy="${y(s.values[i])}" r="7" fill="${s.color}" stroke="var(--bg)" stroke-width="3"/>`)).join('')}</g>`).join('');
+  const ref = series.find((s) => s.ref);
+  const cards = points.map((pt, i) => {
+    const rows = series.map((s) => { const v = s.values[i]; return `<div class="ic-row"><span><i style="background:${s.color}"></i>${esc(s.name)}</span><strong>${v === null || v === undefined ? '—' : esc((s.fmt || format)(v))}</strong></div>`; }).join('');
+    const main = series[0].values[i]; const rv = ref ? ref.values[i] : null;
+    const delta = ref && main !== null && main !== undefined && rv !== null && rv !== undefined ? `<p class="ic-delta">${esc(format(Math.abs(main - rv)).replace(/%$/, ' percentage points'))} ${main >= rv ? 'above' : 'below'} the ${esc(ref.name.toLowerCase())}</p>` : '';
+    const res = pt.result ? `<span class="ic-res ${pt.result === 'W' ? 'w' : pt.result === 'L' ? 'l' : 'd'}">${esc(pt.result)} ${esc(pt.score || '')}</span>` : '';
+    return `<div class="ic-head"><div><strong>${esc(pt.title)}</strong><span>${esc(pt.sub || '')}</span></div>${res}</div><div class="ic-rows">${rows}</div>${delta}${(pt.links || []).length ? `<div class="ic-links">${pt.links.map(([l, h]) => `<a href="${esc(h)}">${esc(l)} →</a>`).join('')}</div>` : ''}`;
+  });
+  const xs = labels.map((_, i) => +x(i).toFixed(1));
+  const lastI = labels.length - 1;
+  return `<div class="chart ichart" data-sel="${lastI}" data-xs="${xs.join(',')}">${head}
+    <div class="ichart-tools"><span class="small faint">Tap a game for details</span><button class="ic-btn" data-expand aria-label="Expand chart" title="Expand">⤢</button></div>
+    <div class="ichart-title">${esc(title)}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(yLabel || title)}">${g}<line class="sel-line" x1="${xs[lastI]}" x2="${xs[lastI]}" y1="${pad.t}" y2="${H - pad.b}"/>${marks}${hits}</svg>${legend}
+    <div class="ichart-card" aria-live="polite"><div class="ic-nav"><button class="ic-btn" data-step="-1" aria-label="Previous game">‹</button><span class="ic-count">${lastI + 1} / ${labels.length}</span><button class="ic-btn" data-step="1" aria-label="Next game">›</button></div><div class="ic-body">${cards[lastI]}</div></div>
+    <template>${cards.map((c) => `<div>${c}</div>`).join('')}</template></div>`;
+}
+
+// Full screen: the chart is moved to <body> while open (a panel's glass effect would
+// otherwise trap a fixed-position element), and put back in place when closed.
+let holder = null;
+function toggleExpand(c) {
+  const on = !c.classList.contains('expanded');
+  if (on) { holder = document.createComment('chart'); c.replaceWith(holder); document.body.appendChild(c); } else if (holder) { holder.replaceWith(c); holder = null; }
+  c.classList.toggle('expanded', on); document.body.classList.toggle('chart-open', on);
+  const b = c.querySelector('[data-expand]'); b.textContent = on ? '✕' : '⤢'; b.setAttribute('aria-label', on ? 'Close' : 'Expand chart');
+}
+// One delegated handler for every interactive chart on any page.
+function selectPoint(chart, i) {
+  const xs = chart.dataset.xs.split(',').map(Number);
+  const n = xs.length; i = Math.max(0, Math.min(n - 1, i));
+  chart.dataset.sel = i;
+  const line = chart.querySelector('.sel-line'); line.setAttribute('x1', xs[i]); line.setAttribute('x2', xs[i]);
+  chart.querySelectorAll('.pt-mark').forEach((m) => m.classList.toggle('on', Number(m.dataset.mark) === i));
+  const tpl = chart.querySelector('template').content.children[i];
+  chart.querySelector('.ic-body').innerHTML = tpl ? tpl.innerHTML : '';
+  chart.querySelector('.ic-count').textContent = `${i + 1} / ${n}`;
+}
+if (typeof document !== 'undefined' && !window.__ichart) {
+  window.__ichart = true;
+  const pick = (e) => { const h = e.target.closest?.('.ichart rect.hit'); if (h) selectPoint(h.closest('.ichart'), Number(h.dataset.pt)); };
+  document.addEventListener('click', (e) => {
+    pick(e);
+    const st = e.target.closest?.('.ichart [data-step]'); if (st) { const c = st.closest('.ichart'); selectPoint(c, Number(c.dataset.sel) + Number(st.dataset.step)); }
+    const ex = e.target.closest?.('.ichart [data-expand]');
+    if (ex) toggleExpand(ex.closest('.ichart'));
+  });
+  document.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') pick(e); });
+  document.addEventListener('keydown', (e) => {
+    const c = document.querySelector('.ichart.expanded') || e.target.closest?.('.ichart');
+    if (!c) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { selectPoint(c, Number(c.dataset.sel) + (e.key === 'ArrowLeft' ? -1 : 1)); e.preventDefault(); }
+    if (e.key === 'Escape' && c.classList.contains('expanded')) toggleExpand(c);
+  });
+  window.addEventListener('hashchange', () => { const c = document.querySelector('.ichart.expanded'); if (c) { c.remove(); holder = null; } document.body.classList.remove('chart-open'); });
 }
 
 // Paired horizontal bars, e.g. Spurs vs opponent.

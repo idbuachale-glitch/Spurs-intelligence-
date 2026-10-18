@@ -67,7 +67,12 @@ export async function fetchRound(season, tournament, gw, clubCode, clubSlug = 't
     statsDone ? fetchCsv(`${base}/xg_by_minute.csv`).catch(() => []) : [],
   ]);
   const mine = (rows) => rows.filter((r) => ids.has(r.match_id));
-  return { matches, players: mine(players), shots: mine(shots), momentum: mine(momentum), xgMinute: mine(xgMinute), leagueMatches };
+  // Every Premier League player's match row (trimmed to the columns we use), so Spurs
+  // players can be compared with their whole position group across the league.
+  const processedIds = new Set(allMatches.filter((m) => m.player_stats_processed === 'True').map((m) => m.match_id));
+  const keep = ['player_id', 'match_id', 'minutes_played', 'goals', 'assists', ...Object.values(PLAYER_FIELDS), 'accurate_passes_percent', 'aerial_duels_won_percent', 'successful_dribbles_percent'];
+  const leaguePlayers = tournament === 'Premier League' ? players.filter((r) => processedIds.has(r.match_id) && Number(r.minutes_played) > 0).map((r) => Object.fromEntries(keep.filter((k) => r[k] !== undefined && r[k] !== '').map((k) => [k, r[k]]))) : [];
+  return { matches, players: mine(players), shots: mine(shots), momentum: mine(momentum), xgMinute: mine(xgMinute), leagueMatches, leaguePlayers };
 }
 
 // ---------- Normalisation ----------

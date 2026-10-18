@@ -117,6 +117,22 @@ test('video room keeps only Spurs analysis; highlights go to the match page', ()
   assert.equal(byId.g.category, 'review'); assert.equal(byId.h.category, 'stats');
 });
 
+test('strengths and weaknesses compare a player with his position group', async () => {
+  const { fotmobPool, strengthsProfile } = await import('../pipeline/derive/profile.js');
+  const els = new Map(); const rows = [];
+  for (let i = 1; i <= 12; i++) {
+    els.set(i, { id: i, element_type: 3 });
+    for (let m = 1; m <= 4; m++) rows.push({ player_id: String(i), match_id: `m${m}`, minutes_played: '90', tackles_won: String(i === 1 ? 6 : 1), fouls_committed: String(i === 1 ? 5 : 1), chances_created: '1', total_shots: '1', accurate_passes: '40', accurate_passes_percent: '80' });
+  }
+  const pool = fotmobPool(rows, els);
+  const prof = strengthsProfile({ player: { elementId: 1, pos: 'MID', web: 'Test' }, fotPool: pool, fplPct: null, minMinutes: 180 });
+  assert.ok(prof.strengths.some((m) => m.key === 'tacklesWon'), 'most tackles = strength');
+  assert.ok(prof.weaknesses.some((m) => m.key === 'foulsCommitted'), 'most fouls = weakness (lower is better)');
+  assert.equal(prof.metrics.find((m) => m.key === 'tacklesWon').value, 6);
+  const none = strengthsProfile({ player: { elementId: 99, pos: 'MID', web: 'New' }, fotPool: pool, fplPct: null, minMinutes: 180 });
+  assert.equal(none.metrics.length, 0);
+});
+
 test('credentials never appear in logs or the public site', () => {
   assert.equal(redact('https://www.thesportsdb.com/api/v1/json/SECRETKEY/eventslast.php?id=1').includes('SECRETKEY'), false);
   const siteFiles = fs.readdirSync(path.join(ROOT, 'site')).filter((f) => /\.(js|html)$/.test(f));

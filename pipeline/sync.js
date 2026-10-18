@@ -14,6 +14,7 @@ import * as yt from './adapters/youtube.js';
 import * as fc from './adapters/fplcore.js';
 import * as wiki from './adapters/wikipedia.js';
 import { buildSeason } from './derive/build.js';
+import { fotmobPool, strengthsProfile } from './derive/profile.js';
 import { setMinMinutes, minMinutes, leaguePool, leagueTeamRanks, insights, tactical, squadPlanner, positionRanks, playerPercentiles, scoutingSummary, article, coachFor } from './derive/analysis.js';
 import { STATS, RATES, UNAVAILABLE, NOW_AVAILABLE, POS_LABEL } from './derive/stats.js';
 import { ratings, expectedGoals, matchProbabilities, simulateSeason } from './derive/simulate.js';
@@ -115,6 +116,7 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     const needs = (key, kickoffs) => {
       const r = stored.get(key);
       if (!r) return true;
+      if (key.startsWith('Premier League__') && !Array.isArray(r.leaguePlayers)) return true; // one-off: add league-wide player rows
       const unfinished = r.matches.some((m) => (m.finished !== 'True' || m.player_stats_processed !== 'True') && m.kickoff_time && Date.parse(`${m.kickoff_time}Z`) < now.getTime());
       const fresh = kickoffs.some((k) => now - new Date(k) < 7 * 86400e3);
       return unfinished || fresh;
@@ -152,12 +154,12 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
   } else {
     status.sources.fplcore = { label: fc.label, disabled: true, note: 'Disabled (SUPPLEMENTARY_STATS=off). Shots, passing, take-ons, duels and cup player stats are hidden.' };
   }
-  const detail = { matches: [], players: [], shots: [], momentum: [], xgMinute: [], leagueMatches: [] };
+  const detail = { matches: [], players: [], shots: [], momentum: [], xgMinute: [], leagueMatches: [], leaguePlayers: [] };
   if (fc.enabled()) for (const f of listFiles(fcDir)) {
     const r = readJson(path.join(fcDir, f));
     if (!r) continue;
     for (const m of r.matches) detail.matches.push({ tournament: r.tournament, gw: r.gw, row: m });
-    detail.players.push(...r.players); detail.shots.push(...r.shots); detail.momentum.push(...(r.momentum || [])); detail.xgMinute.push(...(r.xgMinute || [])); detail.leagueMatches.push(...(r.leagueMatches || []));
+    detail.players.push(...r.players); detail.shots.push(...r.shots); detail.momentum.push(...(r.momentum || [])); detail.xgMinute.push(...(r.xgMinute || [])); detail.leagueMatches.push(...(r.leagueMatches || [])); detail.leaguePlayers.push(...(r.leaguePlayers || []));
   }
 
   // ---------------- Other competitions (TheSportsDB) ----------------
@@ -283,10 +285,13 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
   const tac = tactical({ allTeamMatches, team: built.teamSummary, players: built.players, season });
   const squad = squadPlanner({ players: built.players, pool, spursId, ranksByPos: positionRanks(pool, spursId) });
   const scouting = {};
+  const elementsById = new Map(boot.elements.map((e) => [Number(e.id), e]));
+  const fotPool = fotmobPool(detail.leaguePlayers, elementsById);
   for (const p of built.players) {
     const pc = playerPercentiles(pool, p.id);
-    scouting[p.id] = { percentiles: pc, summary: scoutingSummary(p, pc) };
-    if (built.files[`players/${p.id}.json`]) Object.assign(built.files[`players/${p.id}.json`], { percentiles: pc, summary: scouting[p.id].summary });
+    const prof = strengthsProfile({ player: p, fotPool, fplPct: pc, minMinutes: minMinutes() });
+    scouting[p.id] = { percentiles: pc, summary: scoutingSummary(p, pc), profile: prof };
+    if (built.files[`players/${p.id}.json`]) Object.assign(built.files[`players/${p.id}.json`], { percentiles: pc, summary: scouting[p.id].summary, profile: prof });
   }
   const sources = [...(fc.enabled() ? ['FPL Core Insights — github.com/olbauday/FPL-Elo-Insights (shots, passing, take-ons, possession; match data collected from FotMob)'] : []), 'Fantasy Premier League API — fantasy.premierleague.com/api (fixtures, results, player statistics; Opta-derived xG/xA)', 'TheSportsDB — thesportsdb.com (non-Premier League fixtures and score cross-check)', 'YouTube — official Tottenham Hotspur and Premier League channels plus Sky Sports Premier League, The Athletic FC, Coaches\' Voice, HITC Sevens, The Overlap and Last Word On Spurs (video metadata and links only)'];
   const art = article({ season, generatedAt: nowIso, team: built.teamSummary, insightsList: ins, tacticalData: tac, sources });
