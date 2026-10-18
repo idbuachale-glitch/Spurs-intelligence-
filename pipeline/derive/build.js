@@ -297,11 +297,13 @@ export function buildSeason(input) {
   // Opposition scouting for the next upcoming matches against Premier League clubs.
   if (isCurrent) {
     const clubs = clubProfiles(detail.leagueMatches || [], teams);
-    const upcoming = fixtures.filter((f) => (f.status === 'SCHEDULED' || f.status === 'POSTPONED') && f.opponentTeamId && !f.friendly).slice(0, 6);
+    // Only the very next match: reports for later games would go stale before kick-off.
+    const upcoming = fixtures.filter((f) => f.status === 'SCHEDULED' && f.kickoff && !f.friendly).slice(0, 1).filter((f) => f.opponentTeamId);
+    const spursNews = players.filter((p) => p.current && ['i', 'd', 's'].includes(p.status)).map((p) => ({ name: p.web, status: p.statusLabel || p.status, news: p.news }));
     for (const f of upcoming) {
       const mf = matchFiles[`matches/${f.id}.json`];
       if (!mf) continue;
-      mf.preview = scoutReport({ fixture: f, opp: f.opponentTeamId, teams, fplFixtures, elements, table, clubs, spursId, spursCode: clubCode });
+      mf.preview = scoutReport({ fixture: f, opp: f.opponentTeamId, teams, fplFixtures, elements, table, clubs, spursId, spursCode: clubCode, spursNews });
       if (mf.preview) { f.hasPreview = true; mf.fixture.hasPreview = true; }
     }
   }

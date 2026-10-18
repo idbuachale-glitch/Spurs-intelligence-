@@ -51,7 +51,7 @@ export const PROFILE_LABELS = {
   longBallPct: ['Long-ball accuracy', '%'], tacklesWon: ['Tackles won', ''], interceptions: ['Interceptions', ''], aerialPct: ['Aerial duels won', '%'], corners: ['Corners', ''],
 };
 
-export function scoutReport({ fixture, opp, teams, fplFixtures, elements, table, clubs, spursId, spursCode }) {
+export function scoutReport({ fixture, opp, teams, fplFixtures, elements, table, clubs, spursId, spursCode, spursNews = [] }) {
   const oppTeam = teams.find((t) => t.id === opp);
   if (!oppTeam) return null;
   const row = table.find((r) => r.teamId === opp) || null;
@@ -100,29 +100,53 @@ export function scoutReport({ fixture, opp, teams, fplFixtures, elements, table,
   if (P('xg')?.rank <= 5) tags.push('Create a lot');
   if (P('fieldTilt')?.rank <= 5) tags.push('Pin teams back');
 
-  // Matchup notes (rule-based): compare Spurs' profile with the opponent's.
-  const notes = [];
+  // Rule-based matchup analysis: worries, Spurs' edges and a suggested approach.
   const s = (k) => mine?.rank?.[k]?.rank; const o = (k) => P(k)?.rank;
-  if (o('xga') >= 14 && s('xg') <= 10) notes.push({ kind: 'opportunity', text: `${oppTeam.name} concede plenty of chance quality (${ord(o('xga'))} for xG conceded) and Spurs create well (${ord(s('xg'))} for xG).` });
-  if (o('xga') >= 14 && s('xg') > 10) notes.push({ kind: 'opportunity', text: `${oppTeam.name} allow good chances (${ord(o('xga'))} for xG conceded), a chance for Spurs to improve on their ${ord(s('xg'))}-ranked attack.` });
-  if (o('xga') <= 6) notes.push({ kind: 'threat', text: `${oppTeam.name} are hard to break down (${ord(o('xga'))} for xG conceded, ${f2(P('xga').value)} per match).` });
-  if (o('xgSetPlay') <= 6) notes.push({ kind: 'threat', text: `Set pieces are a weapon for them (${ord(o('xgSetPlay'))} for set-piece xG). Spurs concede ${f2(mine?.avg?.xgSetPlayAgainst)} set-piece xG per match (${ord(s('xgSetPlayAgainst') || 0)}).` });
-  if (o('possession') <= 6 && s('possession') <= 6) notes.push({ kind: 'watch', text: `Both teams want the ball (${oppTeam.name} ${f2(P('possession').value)}%, Spurs ${f2(mine?.avg?.possession)}%), so control of midfield should decide the pattern of the game.` });
-  else if (o('possession') >= 15 && s('possession') <= 6) notes.push({ kind: 'watch', text: `Expect Spurs to have most of the ball; ${oppTeam.name} average only ${f2(P('possession').value)}% possession. Breaking down a low block and protecting against counters are the keys.` });
-  if (o('dribbles') <= 5) notes.push({ kind: 'threat', text: `${oppTeam.name} are among the best at taking players on (${f2(P('dribbles').value)} successful take-ons per match).` });
-  if (o('bigChancesAgainst') >= 15) notes.push({ kind: 'opportunity', text: `They give away big chances (${f2(P('bigChancesAgainst').value)} per match, ${ord(o('bigChancesAgainst'))}).` });
-  if (dangerMen[0]) notes.push({ kind: 'threat', text: `Main danger: ${dangerMen[0].name} (${dangerMen[0].goals} goal${dangerMen[0].goals === 1 ? '' : 's'}, ${dangerMen[0].assists} assist${dangerMen[0].assists === 1 ? '' : 's'}, ${f2(dangerMen[0].xg + dangerMen[0].xa)} xG+xA this season).` });
-  if (news.length) notes.push({ kind: 'watch', text: `Team news: ${news.slice(0, 4).map((n) => `${n.name} (${n.status.toLowerCase()})`).join(', ')}.` });
+  const sv = (k) => mine?.avg?.[k]; const ov = (k) => P(k)?.value;
+  const name = oppTeam.name;
+  const worries = []; const edges = []; const plan = [];
+  const ev = (...xs) => xs.filter(Boolean).join(' · ');
 
+  // What to worry about
+  if (dangerMen[0]) {
+    const tot = dangerMen.reduce((a, d) => a + d.xg + d.xa, 0) || 1;
+    worries.push({ text: `${dangerMen[0].name} is their main threat: ${dangerMen[0].goals} goal${dangerMen[0].goals === 1 ? '' : 's'}, ${dangerMen[0].assists} assist${dangerMen[0].assists === 1 ? '' : 's'} and ${f2(dangerMen[0].xg + dangerMen[0].xa)} xG+xA this season.`, evidence: ev(dangerMen[1] && `next: ${dangerMen[1].name} (${f2(dangerMen[1].xg + dangerMen[1].xa)})`, `${Math.round(((dangerMen[0].xg + dangerMen[0].xa) / tot) * 100)}% of their top-4 output`) });
+  }
+  if (o('xgSetPlay') <= 7) worries.push({ text: `Set pieces: they are ${ord(o('xgSetPlay'))} for set-piece xG (${f2(ov('xgSetPlay'))} per match).`, evidence: `Spurs concede ${f2(sv('xgSetPlayAgainst'))} set-piece xG per match (${ord(s('xgSetPlayAgainst') || 0)})` });
+  if (o('xga') <= 7) worries.push({ text: `They are hard to break down: ${ord(o('xga'))} for xG conceded (${f2(ov('xga'))} per match), and Spurs are ${ord(s('xg') || 0)} for chance creation.`, evidence: `big chances conceded ${f2(ov('bigChancesAgainst'))} per match` });
+  if (o('dribbles') <= 6) worries.push({ text: `Their dribblers: ${ord(o('dribbles'))} for successful take-ons (${f2(ov('dribbles'))} per match).`, evidence: '' });
+  if (o('aerialPct') <= 6 && sv('aerialPct') !== null && s('aerialPct') >= 12) worries.push({ text: `In the air they win ${f2(ov('aerialPct'))}% of aerial duels (${ord(o('aerialPct'))}); Spurs win ${f2(sv('aerialPct'))}% (${ord(s('aerialPct'))}).`, evidence: '' });
+  if (o('xg') <= 7) worries.push({ text: `They create a lot: ${ord(o('xg'))} for xG (${f2(ov('xg'))} per match).`, evidence: `Spurs concede ${f2(sv('xga'))} xG per match (${ord(s('xga') || 0)})` });
+  if (s('sot') >= 15 && s('shots') <= 12) worries.push({ text: `Spurs' own finishing problem: plenty of shots (${f2(sv('shots'))} per match) but few on target (${f2(sv('sot'))}, ${ord(s('sot'))}).`, evidence: 'a recurring issue this season' });
+  if (spursNews.length) worries.push({ text: `Spurs team news: ${spursNews.slice(0, 5).map((n) => `${n.name} (${n.status.toLowerCase()})`).join(', ')}.`, evidence: 'official Premier League availability' });
+
+  // Where Spurs have the edge
+  if (s('possession') <= 6 && o('possession') >= 12) edges.push({ text: `Control of the ball: Spurs average ${f2(sv('possession'))}% possession (${ord(s('possession'))}); ${name} average ${f2(ov('possession'))}% (${ord(o('possession'))}).`, evidence: '' });
+  if (s('dribbles') <= 5) edges.push({ text: `1v1 ability: Spurs are ${ord(s('dribbles'))} for successful take-ons (${f2(sv('dribbles'))} per match)${o('tacklesWon') >= 12 ? `, and ${name} win few tackles (${ord(o('tacklesWon'))})` : ''}.`, evidence: '' });
+  if (s('passPct') <= 5) edges.push({ text: `Passing security: ${f2(sv('passPct'))}% pass accuracy (${ord(s('passPct'))})${o('interceptions') >= 12 ? `, against a side that intercepts little (${ord(o('interceptions'))})` : ''}.`, evidence: '' });
+  if (o('xga') >= 13) edges.push({ text: `Their defence concedes good chances: ${ord(o('xga'))} for xG conceded (${f2(ov('xga'))} per match), ${f2(ov('bigChancesAgainst'))} big chances given up per match.`, evidence: '' });
+  if (s('xga') <= 8 && o('xg') >= 12) edges.push({ text: `Spurs' defence (${ord(s('xga'))} for xG conceded) faces an attack ranked ${ord(o('xg'))} for chance creation.`, evidence: '' });
+  if (s('fieldTilt') <= 6 && o('fieldTilt') >= 12) edges.push({ text: `Territory: Spurs play ${f2(sv('fieldTilt'))}% of their passes in the opposition half (${ord(s('fieldTilt'))}); ${name} only ${f2(ov('fieldTilt'))}% (${ord(o('fieldTilt'))}).`, evidence: '' });
+  if (news.length) edges.push({ text: `${name} are missing ${news.filter((n) => n.status !== 'Doubtful').map((n) => n.name).join(', ') || 'no one for certain'}${news.some((n) => n.status === 'Doubtful') ? `; doubtful: ${news.filter((n) => n.status === 'Doubtful').map((n) => n.name).join(', ')}` : ''}.`, evidence: 'official availability flags' });
+
+  // Suggested approach
+  if (o('possession') >= 14 && s('possession') <= 8) plan.push(`Expect a low block. Move the ball quickly from side to side and use the take-on strength to beat the first man, rather than passing around them.`);
+  if (o('possession') <= 6) plan.push(`${name} like the ball too. Win the midfield battle, press their build-up and be ready to defend for spells.`);
+  if (s('sot') >= 14 || (P('xga') && o('xga') >= 13)) plan.push(`Work the ball into the box before shooting. Spurs' shots are often low quality, and ${name} ${o('bigChancesAgainst') >= 12 ? 'give away big chances' : 'can be opened up'} when teams get in behind.`);
+  if (o('xgSetPlay') <= 8) plan.push(`Avoid cheap fouls and corners near the box; their set pieces are a real threat.`);
+  if (o('aerialPct') <= 6) plan.push(`Keep the ball on the ground in build-up; long balls play into their aerial strength.`);
+  if (dangerMen[0]) plan.push(`Limit ${dangerMen[0].name}'s time on the ball${dangerMen[0].pos === 'FWD' ? ' in and around the box' : ' between the lines'}.`);
+  if (o('dribbles') <= 6) plan.push(`Defend their wide players in pairs and stay on your feet against their dribblers.`);
+  if (s('possession') <= 6) plan.push(`Keep the rest-defence structure behind the ball to stop counter-attacks when possession is lost.`);
   const recentForm = games.slice(-5);
   return {
     opponent: oppTeam.name, short: oppTeam.short, generatedFor: fixture.id,
     table: row ? { position: row.position, played: row.played, points: row.points, won: row.won, drawn: row.drawn, lost: row.lost, gf: row.gf, ga: row.ga, gd: row.gd } : null,
     spursTable: spursRow ? { position: spursRow.position, points: spursRow.points } : null,
     form: recentForm, overall: split(games), venue: { label: venueOpp === 'home' ? 'At home' : 'Away from home', ...split(venueGames) },
-    profile, profileMatches: prof?.matches ?? 0, tags, notes,
+    profile, profileMatches: prof?.matches ?? 0, tags, worries, edges, plan,
     dangerMen, topScorers, creators, keeper, news,
-    label: 'Scouting generated automatically from this season\'s data; matchup notes are rule-based comparisons, not predictions.',
+    label: 'Rebuilt on every update from this season\'s data. The worries, edges and approach are rule-based readings of the numbers, not predictions or coaching advice.',
     sources: ['Fantasy Premier League API (results, table, player totals, availability)', prof ? 'FPL Core Insights (FotMob team match statistics)' : null].filter(Boolean),
   };
 }
