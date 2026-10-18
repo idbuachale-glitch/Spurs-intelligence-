@@ -94,7 +94,7 @@ export const RATES = [
 // What the free sources do NOT provide. Shown in the UI so gaps are never hidden.
 export const UNAVAILABLE = {
   attacking: ['Carries & progressive carries'],
-  passing: ['Pass maps & pass combinations (passer → receiver)', 'Heat maps / touch locations', 'Progressive passes', 'Passes into the penalty area', 'Through balls', 'Possession lost (total)'],
+  passing: ['Pass maps & pass combinations (passer → receiver)', 'Heat maps / touch locations', 'Progressive passes', 'Passes into the penalty area', 'Through balls'],
   defensive: ['Pressures & pressure success'],
   goalkeeping: [],
   identity: ['Height', 'Preferred foot', 'Contract expiry'],
@@ -116,6 +116,8 @@ export const NOW_AVAILABLE = [
   ['Set-piece breakdown (set-piece xG, goals and shots)', 'Team statistics'],
   ['First- and second-half splits', 'Team statistics, Match breakdown'],
   ['Set-piece takers (corners, free kicks, penalties)', 'Team statistics, player profiles'],
+  ['Possession lost (estimate: misplaced passes + dispossessed)', 'Player Lab (Progression)'],
+  ['Ball progression substitutes (final-third passes, chances, box touches, long balls, crosses) in place of progressive passes and carries', 'Player Lab (Progression)'],
 ];
 
 export const POS = { 1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD' };

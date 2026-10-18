@@ -151,10 +151,11 @@ p { margin: 0 0 0.8em; max-width: 72ch; }
 .stat-tile .lbl { color: var(--muted); font-size: 0.86rem; }
 
 /* ---------- Tables ---------- */
+/* Headers wrap and cells tighten so tables fit their panel instead of scrolling sideways. */
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius-sm); }
 table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { color: var(--muted); font-weight: 500; font-size: 0.82rem; position: sticky; top: 0; background: var(--panel-solid); }
+th { color: var(--muted); font-weight: 500; font-size: 0.82rem; white-space: normal; line-height: 1.25; vertical-align: bottom; position: sticky; top: 0; background: var(--panel-solid); }
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable[aria-sort='descending']::after { content: ' ▾'; color: var(--cyan); }
 th.sortable[aria-sort='ascending']::after { content: ' ▴'; color: var(--cyan); }
@@ -186,6 +187,7 @@ select.ctl, input.ctl { background: var(--panel); border: 1px solid var(--line);
 .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 0.92rem; }
 .facts strong { color: var(--text); font-weight: 600; }
 .statlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 2px 18px; }
+.statlist.one { grid-template-columns: 1fr; }
 .statrow { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 0.92rem; }
 .statrow .v { font-family: var(--display); font-size: 1.1rem; font-weight: 600; text-align: right; }
 .statrow .v small { font-family: var(--body); font-size: 0.75rem; color: var(--faint); font-weight: 400; margin-left: 4px; }
@@ -256,14 +258,24 @@ select.ctl, input.ctl { background: var(--panel); border: 1px solid var(--line);
   .grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 760px) {
+/* Tablets in portrait and phones: bottom bar instead of the sidebar, full-width content. */
+@media (max-width: 1100px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .topbar { padding: 10px 16px; flex-wrap: wrap; }
   .topbar .mobile-brand { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 700; font-size: 1.15rem; color: var(--text); }
-  .search { order: 3; max-width: none; flex-basis: 100%; }
   .season-select { margin-left: auto; }
   .topbar label[for='season'] { display: none; }
+  .bottom-nav { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; background: var(--bg-2); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .bottom-nav a, .bottom-nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; font-size: 0.7rem; color: var(--muted); background: none; border: 0; min-height: 48px; }
+  .bottom-nav a[aria-current='page'] { color: var(--cyan); }
+  .bottom-nav svg { width: 20px; height: 20px; }
+  .more-sheet.open { display: block; position: fixed; inset: auto 0 0 0; z-index: 40; background: var(--bg-2); border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; padding: 16px 16px calc(80px + env(safe-area-inset-bottom)); }
+  .more-sheet a { display: flex; gap: 12px; align-items: center; padding: 13px 8px; color: var(--text); border-bottom: 1px solid var(--line); }
+  .content { padding: 22px 22px 100px; }
+}
+@media (max-width: 760px) {
+  .search { order: 3; max-width: none; flex-basis: 100%; }
   .content { padding: 18px 16px 100px; }
   .grid.two, .grid.three { grid-template-columns: 1fr; }
   .hero { padding: 20px 18px; }
@@ -272,12 +284,6 @@ select.ctl, input.ctl { background: var(--panel); border: 1px solid var(--line);
   .area-row { grid-template-columns: 1fr auto; }
   .area-row > :last-child { grid-column: 1 / -1; }
   .pbar { grid-template-columns: 1fr 1.3fr 38px; }
-  .bottom-nav { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; background: var(--bg-2); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
-  .bottom-nav a, .bottom-nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; font-size: 0.7rem; color: var(--muted); background: none; border: 0; min-height: 48px; }
-  .bottom-nav a[aria-current='page'] { color: var(--cyan); }
-  .bottom-nav svg { width: 20px; height: 20px; }
-  .more-sheet.open { display: block; position: fixed; inset: auto 0 0 0; z-index: 40; background: var(--bg-2); border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; padding: 16px 16px calc(80px + env(safe-area-inset-bottom)); }
-  .more-sheet a { display: flex; gap: 12px; align-items: center; padding: 13px 8px; color: var(--text); border-bottom: 1px solid var(--line); }
   /* Wide tables become stacked cards on phones */
   table.stack thead { display: none; }
   table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
@@ -338,3 +344,15 @@ table.lab .sub .st { display: block; }
   table.lab td, table.lab th { padding: 8px 4px; }
   table.lab th { font-size: 0.64rem; }
 }
+
+/* Tables inside side-by-side panels, and on tablets/phones: compact cells. */
+.grid .panel table th, .grid .panel table td { padding: 8px 6px; }
+.grid .panel table { font-size: 0.86rem; }
+@media (max-width: 1100px) { th, td { padding: 8px 7px; } table { font-size: 0.88rem; } }
+@media (max-width: 480px) { th, td { padding: 7px 5px; } table { font-size: 0.82rem; } th { font-size: 0.7rem; } }
+td.wrap { white-space: normal; min-width: 12ch; }
+table.sit th.grp { text-align: center; border-bottom: 1px solid var(--line); color: var(--text); }
+table.sit td.wrap { min-width: 0; }
+.panel table.sit th, .panel table.sit td, .panel table.sim th, .panel table.sim td { padding-left: 3px; padding-right: 3px; }
+.cl-s { display: none; }
+@media (max-width: 480px) { .cl-l { display: none; } .cl-s { display: inline; } .hide-xs { display: none; } }
