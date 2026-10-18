@@ -131,7 +131,9 @@ const spursCrest = (cls = '') => crestImg(6, cls);
 const fixtureRow = (f) => `<a class="fx" href="#/match/${encodeURIComponent(f.id)}">
   <div class="when">${esc(fmtDate(f.kickoff))}<br><span class="faint">${esc(fmtTime(f.kickoff))} Bahrain</span></div>
   <div><div class="who">${crest(f.opponentTeamId)}${f.home ? '' : '@ '}${esc(f.opponent)}${f.home ? ' (H)' : ''}</div><div class="comp">${esc(f.competition)}${f.gameweek ? ` · GW${f.gameweek}` : ''}${f.status !== 'FT' && f.status !== 'SCHEDULED' ? ` · ${esc(statusText[f.status] || f.status)}` : ''}${f.kickoffHistory?.length ? ' · rescheduled' : ''}${f.hasPreview ? ' · <span style="color:var(--cyan)">scouting report</span>' : ''}</div></div>
-  <div class="scorebox">${f.score ? `${f.score.spurs}–${f.score.opp} ${resultChip(f.result, true)}` : `<span class="small muted" style="font-family:var(--body);font-weight:400">${f.status === 'POSTPONED' ? 'TBC' : ''}</span>`}</div></a>`;
+  <div class="scorebox">${!f.score && f.difficulty ? `<span class="diff ${f.difficulty.level}" title="${{ easy: 'Easier game', medium: 'Tougher game', hard: 'Hard game' }[f.difficulty.level]}: Spurs win ${f.difficulty.win}% · draw ${f.difficulty.draw}% · lose ${f.difficulty.loss}%" aria-label="${{ easy: 'Easier', medium: 'Tougher', hard: 'Hard' }[f.difficulty.level]} game, Spurs win chance ${f.difficulty.win}%"></span><span class="diff-pct">${f.difficulty.win}%</span>` : ''}${f.score ? `${f.score.spurs}–${f.score.opp} ${resultChip(f.result, true)}` : `<span class="small muted" style="font-family:var(--body);font-weight:400">${f.status === 'POSTPONED' ? 'TBC' : ''}</span>`}</div></a>`;
+// Key for the difficulty dots on upcoming fixtures.
+const diffKey = (list) => (list.some((f) => f.difficulty && !f.score) ? `<p class="small muted diff-key"><span class="diff easy"></span>Easier <span class="diff medium"></span>Tougher <span class="diff hard"></span>Hard · % = Spurs' chance of winning. From the site's match model (expected points from xG ratings): a rough guide, not betting odds. Cup ties against non-Premier League clubs are not rated.</p>` : '');
 
 const src = (text, at) => `<p class="source">Source: ${esc(text)}${at ? `. Retrieved ${esc(fmtDateTime(at))} (Bahrain)` : ''}.</p>`;
 const per = (v, dp = 2) => fmt(v, dp);
@@ -259,7 +261,7 @@ AFTER.fixtures = async () => {
     let list = fx.fixtures.filter((f) => (comp === '__all' ? true : comp ? f.competition === comp : !f.friendly));
     if (tab === 'Upcoming') list = list.filter((f) => ['SCHEDULED', 'LIVE', 'POSTPONED'].includes(f.status));
     if (tab === 'Results') list = list.filter((f) => f.result).reverse();
-    document.getElementById('fx-list').innerHTML = list.map(fixtureRow).join('') || '<div class="empty">No matches in this view.</div>';
+    document.getElementById('fx-list').innerHTML = (list.map(fixtureRow).join('') + diffKey(list)) || '<div class="empty">No matches in this view.</div>';
   };
   document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; document.querySelectorAll('[data-tab]').forEach((x) => x.setAttribute('aria-pressed', x === b)); draw(); }));
   document.getElementById('comp').addEventListener('change', draw);
@@ -683,12 +685,46 @@ VIEWS.table = async () => {
   const t = await loadSeason('table.json');
   const v = t.verification || {};
   return `<div class="section-head"><h1>Premier League table</h1><span class="muted small">${esc(state.season.replace('-', '/'))}</span></div>
+  ${roundPanel(t.round)}
   <div class="panel" style="padding:6px"><div class="table-wrap"><table><thead><tr><th class="r">#</th><th>Club</th><th class="r">P</th><th class="r">W</th><th class="r">D</th><th class="r">L</th><th class="r hide-xs">GF</th><th class="r hide-xs">GA</th><th class="r">GD</th><th class="r">Pts</th><th>Form</th></tr></thead><tbody>
   ${t.rows.map((r) => `<tr class="${r.teamId === t.spurs?.teamId ? 'hl' : ''}"><td class="r">${r.position}</td><td>${crest(r.teamId)}<span class="cl-l">${esc(r.team)}</span><span class="cl-s">${esc(r.short || r.team)}</span></td><td class="r">${r.played}</td><td class="r">${r.won}</td><td class="r">${r.drawn}</td><td class="r">${r.lost}</td><td class="r hide-xs">${r.gf}</td><td class="r hide-xs">${r.ga}</td><td class="r">${r.gd > 0 ? '+' : ''}${r.gd}</td><td class="r"><strong>${r.points}</strong></td><td><span class="form-strip">${r.form.map((x) => resultChip(x, true)).join('')}</span></td></tr>`).join('')}</tbody></table></div></div>
   <p class="source">${esc(t.source)}, ordered by points, goal difference, goals scored, then head-to-head. Includes provisionally finished matches. Retrieved ${esc(fmtDateTime(t.generatedAt))}.
   ${v.fplOfficialPosition ? ` Cross-check with the Premier League's published position: ${v.fplOfficialPosition.agrees ? 'matches' : `differs (official ${v.fplOfficialPosition.position})`}.` : ''}
-  ${v.footballData ? ` football-data.org check: ${v.footballData.agrees ? 'matches' : 'differs'} (${esc(fmtDateTime(v.footballData.retrievedAt))}).` : ''}</p>`;
+  ${v.footballData ? ` football-data.org check: ${v.footballData.agrees ? 'matches' : 'differs'} (${esc(fmtDateTime(v.footballData.retrievedAt))}).` : ''}</p>
+  ${leadersPanel(t.leaders)}`;
 };
+// Spurs' next gameweek: the range of positions Spurs could hold and the other fixtures that matter.
+function roundPanel(r) {
+  if (!r) return '';
+  const pos = (n) => ordinal(n);
+  const rg = r.range;
+  const rangeTxt = `Spurs are ${pos(rg.current)} on ${r.spurs.points} points. After gameweek ${r.gameweek} they could be as high as <strong>${pos(rg.best)}</strong>${rg.bestNeedsGd ? ` (${pos(rg.bestSafe)} if goal difference goes against them)` : ''} with a win, or as low as <strong>${pos(rg.worst)}</strong>${rg.worst !== rg.worstIfGd ? ` (${pos(rg.worstIfGd)} if goal difference helps)` : ''} with a defeat, depending on other results.`;
+  const side = (x, win) => `<span class="rf-team${win ? ' want' : ''}">${crest(x.teamId)}<span>${esc(x.short)}</span><span class="faint tiny">${x.position ? pos(x.position) : ''}</span></span>`;
+  const row = (f) => {
+    const mid = f.score ? `<strong class="rf-score">${f.score.home}–${f.score.away}</strong>${f.status === 'LIVE' ? '<span class="live-dot">LIVE</span>' : ''}` : `<span class="small muted">${esc(fmtDate(f.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}<br>${esc(fmtTime(f.kickoff))}</span>`;
+    const out = f.outcome ? `<span class="rf-out ${f.outcome}">${{ good: 'Good for Spurs', mixed: 'Mixed for Spurs', bad: 'Bad for Spurs' }[f.outcome]}</span>` : '';
+    const want = f.wants ? `<span class="rf-want">Spurs want: ${f.wants === 'draw' ? 'a draw' : `${esc(f.wants === 'home' ? f.home.short : f.away.short)} win`}</span>` : '';
+    return `<div class="rf-row${f.relevant ? ' rel' : ''}"><div class="rf-line">${side(f.home, f.wants === 'home')}<div class="rf-mid">${mid}</div>${side(f.away, f.wants === 'away')}</div>
+      ${f.relevant ? `<div class="rf-note">${f.sameDay ? '<span class="rf-tag">Same day as Spurs</span>' : ''}${want}${out}<p class="small" style="margin:4px 0 0">${esc(f.note)}</p></div>` : ''}</div>`;
+  };
+  const rel = r.fixtures.filter((f) => f.relevant); const rest = r.fixtures.filter((f) => !f.relevant);
+  const sm = r.spursMatch;
+  return `<section class="panel section"><div class="section-head"><h2>Gameweek ${r.gameweek}: what it means for Spurs</h2><span class="label-analysis">Calculated</span></div>
+    <p class="small" style="margin:0 0 6px">${crest(sm.opponentTeamId)}Spurs ${sm.home ? 'v' : '@'} <strong>${esc(sm.opponent)}</strong> · ${esc(fmtDate(sm.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}, ${esc(fmtTime(sm.kickoff))} Bahrain</p>
+    <p class="small" style="margin:0 0 12px">${rangeTxt}</p>
+    ${rel.length ? `<h3 style="margin:8px 0">Results that matter to Spurs</h3><div class="rf-list">${rel.map(row).join('')}</div>` : '<p class="small muted">No other fixture this gameweek involves a team close enough to swap places with Spurs.</p>'}
+    ${rest.length ? `<details class="rf-more"><summary class="small">Other fixtures this gameweek (${rest.length})</summary><div class="rf-list">${rest.map(row).join('')}</div></details>` : ''}
+    <p class="source">${esc(r.label)} "Close enough" = within six points of Spurs.</p></section>`;
+}
+// League-wide leaders: goals, assists, yellow and red cards.
+function leadersPanel(L) {
+  if (!L) return '';
+  const lists = ['goals', 'assists', 'yellows', 'reds'].map((k) => L[k]).filter(Boolean);
+  if (!lists.length) return '';
+  const card = (x) => `<div class="panel"><h3 style="margin-top:0">${esc(x.title)}</h3>${x.rows.length ? `<ol class="leaders">${x.rows.map((r) => `<li class="${r.teamId === state.meta.providerTeamIds?.fpl ? 'hl' : ''}"><span>${crest(r.teamId)}<strong>${esc(r.name)}</strong> <span class="faint tiny">${esc(r.team || '')}</span></span><span class="v">${r.value}</span></li>`).join('')}</ol>` : `<p class="small muted">${x.recorded ? 'None yet this season.' : 'Not available yet; appears after the next data refresh.'}</p>`}</div>`;
+  return `<section class="section"><div class="section-head"><h2>Premier League leaders</h2><span class="muted small">All clubs · Spurs players highlighted</span></div>
+    <div class="grid two">${lists.map(card).join('')}</div><p class="source">${esc(L.source)}. Ties with fifth place are included (up to eight players).</p></section>`;
+}
 
 // ---------------- Match Centre ----------------
 VIEWS.match = async (id) => {

@@ -17,11 +17,12 @@ import { buildSeason } from './derive/build.js';
 import { fotmobPool, strengthsProfile, proxyPanel } from './derive/profile.js';
 import { setMinMinutes, minMinutes, leaguePool, leagueTeamRanks, insights, tactical, squadPlanner, positionRanks, playerPercentiles, scoutingSummary, article, coachFor } from './derive/analysis.js';
 import { STATS, RATES, UNAVAILABLE, NOW_AVAILABLE, POS_LABEL } from './derive/stats.js';
+import { leaders, roundContext } from './derive/leaguecontext.js';
 import { ratings, expectedGoals, matchProbabilities, simulateSeason } from './derive/simulate.js';
 
 const ELEMENT_FIELDS = ['id', 'code', 'first_name', 'second_name', 'web_name', 'known_name', 'team', 'element_type', 'birth_date', 'region', 'squad_number', 'team_join_date',
   'status', 'news', 'news_added', 'chance_of_playing_next_round', 'removed', 'minutes', 'starts', 'goals_scored', 'assists', 'expected_goals', 'expected_assists',
-  'expected_goals_conceded', 'goals_conceded', 'clearances_blocks_interceptions', 'tackles', 'recoveries', 'defensive_contribution', 'saves', 'yellow_cards', 'clean_sheets', 'corners_and_indirect_freekicks_order', 'direct_freekicks_order', 'penalties_order', 'threat', 'creativity', 'influence'];
+  'expected_goals_conceded', 'goals_conceded', 'clearances_blocks_interceptions', 'tackles', 'recoveries', 'defensive_contribution', 'saves', 'yellow_cards', 'red_cards', 'clean_sheets', 'corners_and_indirect_freekicks_order', 'direct_freekicks_order', 'penalties_order', 'threat', 'creativity', 'influence'];
 
 export async function runSync({ now = new Date(), force = false, siteData = SITE_DATA, stateDir = STATE_DIR } = {}) {
   const S = (...p) => path.join(stateDir, ...p);
@@ -269,6 +270,10 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     fplOfficialPosition: fplPos && fplPos.position && fplPos.played > 0 ? { position: fplPos.position, agrees: fplPos.position === built.files['table.json'].spurs?.position } : null,
     footballData: standingsCheck,
   };
+  try {
+    built.files['table.json'].leaders = { source: 'FPL API season totals (all clubs)', ...leaders(boot.elements, teams) };
+    built.files['table.json'].round = roundContext({ table: built.table, fplFixtures: fixtures.fixtures, spursId, teams, now });
+  } catch (err) { log.error('table context failed', { error: String(err.message || err) }); }
 
   // ---------------- Analysis ----------------
   setMinMinutes(Math.max(0, ...built.table.map((r) => r.played)));
@@ -327,6 +332,18 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
       if (Date.parse(nextFx.kickoff) > now.getTime()) preds[nextFx.id] = { ...next, savedAt: nowIso };
       const mf = built.files[`matches/${nextFx.id}.json`];
       if (mf) { mf.forecast = next; if (mf.preview) mf.preview.forecast = next; }
+    }
+    // Difficulty for every upcoming match against a rated (Premier League) opponent:
+    // expected points for Spurs from the same model (3 × win% + draw%).
+    for (const f of built.fixtures) {
+      if (f.status !== 'SCHEDULED' || f.friendly || !f.opponentTeamId || !R.ratings.has(f.opponentTeamId) || !R.ratings.has(spursId)) continue;
+      const neutral = f.competition !== 'Premier League' && /final/i.test(f.competition);
+      const xg = f.home ? expectedGoals(R, spursId, f.opponentTeamId, neutral) : expectedGoals(R, f.opponentTeamId, spursId, neutral);
+      if (!xg) continue;
+      const p = matchProbabilities(xg.home, xg.away);
+      const win = f.home ? p.home : p.away; const loss = f.home ? p.away : p.home;
+      const xpts = 3 * win + p.draw;
+      f.difficulty = { level: xpts >= 1.6 ? 'easy' : xpts >= 1.2 ? 'medium' : 'hard', win: Math.round(win * 100), draw: Math.round(p.draw * 100), loss: Math.round(loss * 100), xpts: Math.round(xpts * 100) / 100 };
     }
     // Record of past forecasts against actual results.
     const record = [];
