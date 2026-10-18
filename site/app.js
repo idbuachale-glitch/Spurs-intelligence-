@@ -499,13 +499,22 @@ VIEWS.squad = async () => {
   <div class="panel section"><div class="section-head"><h2>Replacement shortlist</h2><span class="label-analysis">Algorithmic recommendation</span></div>
     <select class="ctl" id="rep-player" aria-label="Player">${ps.filter((p) => sq.replacements[p.id]?.length).map((p) => `<option value="${p.id}">${esc(p.web)} (${p.pos})</option>`).join('')}</select>
     <div id="rep-out" style="margin-top:12px"></div>
-    ${sq.notes.map((n) => `<p class="tiny faint">${esc(n)}</p>`).join('')}</div>
+    <p class="tiny faint">Similarity compares per-90 numbers within the same position across all Premier League players with 450+ minutes, from the official FPL data. Strengths = measures in the top quarter of the league for that position.</p>${sq.notes.map((n) => `<p class="tiny faint">${esc(n)}</p>`).join('')}</div>
   ${[['loans', 'Out on loan'], ['departures', 'Left the club this season'], ['unregistered', 'Not in the registered squad']].filter(([k]) => sq[k]?.length).map(([k, title]) => `<div class="panel section"><h2>${title}</h2>${sq[k].map((d) => `<div class="statrow"><span><a href="#/player/${d.playerId}">${esc(d.name)}</a> <span class="faint tiny">${esc(d.pos || '')}</span></span><span class="small muted" style="text-align:right">${esc(d.note || '')}${d.apps ? ` · ${d.apps} Spurs apps this season` : ''}</span></div>`).join('')}<p class="tiny faint">Status and note as published by the Premier League (FPL player list). These players are excluded from the current squad, depth charts and replacement analysis.</p></div>`).join('')}`;
 };
 AFTER.squad = async () => {
   const a = await loadSeason('analysis.json', state.season, { optional: true });
   const sel = document.getElementById('rep-player'); if (!sel) return;
-  const draw = () => { const r = a.squad.replacements[sel.value] || []; document.getElementById('rep-out').innerHTML = `<div class="table-wrap"><table class="stack"><thead><tr><th>Player</th><th>Club</th><th class="r">Age</th><th class="r">PL minutes</th><th class="r">Similarity</th></tr></thead><tbody>${r.map((x) => `<tr><td data-label="Player">${esc(x.name)}</td><td data-label="Club">${esc(x.team)}</td><td class="r" data-label="Age">${fmt(x.age)}</td><td class="r" data-label="Minutes">${x.minutes}</td><td class="r" data-label="Similarity">${x.similarity}%</td></tr>`).join('')}</tbody></table></div>`; };
+  const draw = () => {
+    const r = a.squad.replacements[sel.value] || []; const tgt = a.squad.replacementTargets?.[sel.value];
+    document.getElementById('rep-out').innerHTML = r.map((x) => `<div class="panel" style="margin-bottom:12px">
+      <div class="section-head" style="margin-bottom:4px"><div><strong style="font-size:1.1rem">${esc(x.name)}</strong><div class="small muted">${esc(x.team)} · age ${fmt(x.age)} · ${x.minutes} PL minutes${x.starts !== null && x.starts !== undefined ? ` · ${x.starts} starts` : ''}</div></div><div class="rank-tile" style="padding:8px 12px;text-align:center"><div class="val" style="font-size:1.6rem">${x.similarity}%</div><div class="tiny muted">similar</div></div></div>
+      ${x.why?.length ? `<h3 class="small" style="margin:12px 0 4px">Why they're similar</h3>${x.why.map((d) => `<div class="statrow"><span>${esc(d.label)} per 90</span><span class="small">${esc(x.web)} <strong class="num">${d.them}</strong> · ${esc(tgt?.name || 'Spurs')} <strong class="num">${d.spurs}</strong></span></div>`).join('')}` : ''}
+      ${x.strengths?.length ? `<h3 class="small" style="margin:12px 0 4px">Strengths</h3><div class="chips">${x.strengths.map((st) => `<span class="pill" style="border-color:var(--win);color:var(--text)">${esc(st.label)}: top ${Math.max(1, 100 - st.pct)}% <span class="faint">(${st.value}/90)</span></span>`).join('')}</div>` : '<p class="small muted" style="margin-top:10px">No measure in the top quarter of the league for his position.</p>'}
+      ${x.differs?.length ? `<p class="small" style="margin:8px 0 0"><span class="muted">Where he differs:</span> ${x.differs.map((d) => `${d.higher ? 'more' : 'less'} ${esc(d.label.toLowerCase())} (${d.them} v ${d.spurs} per 90)`).join('; ')}</p>` : ''}
+      <div class="chips" style="margin-top:10px">${[['G', x.season.goals], ['A', x.season.assists], ['xG', x.season.xg], ['xA', x.season.xa], ['CBI', x.season.cbi], ['Tackles', x.season.tackles], ['Recoveries', x.season.recoveries], ...(x.season.saves ? [['Saves', x.season.saves], ['Clean sheets', x.season.cs]] : [])].filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => `<span class="pill"><span class="faint">${k}</span> <strong style="color:var(--text)">${v}</strong></span>`).join('')}</div>
+      </div>`).join('') || '<p class="na">Not enough minutes to compare yet.</p>';
+  };
   sel.addEventListener('change', draw); draw();
 };
 
