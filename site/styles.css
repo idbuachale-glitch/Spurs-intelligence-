@@ -433,3 +433,8 @@ body.chart-open { overflow: hidden; }
 .pxbar { height: 4px; border-radius: 2px; background: var(--line, rgba(255,255,255,.08)); margin: -2px 0 8px; overflow: hidden; }
 .pxbar > div { height: 100%; background: var(--cyan); border-radius: 2px; }
 .radar-note { border-top: 1px solid var(--line, rgba(255,255,255,.08)); padding-top: 8px; }
+
+/* Opponent crests under match charts */
+.chart .badge-bg { fill: #eef3fb; stroke: var(--line-strong); stroke-width: 1; }
+.chart .badge-txt { fill: #0b1640; font-weight: 700; }
+.ichart .badge-ring { fill: none; stroke: var(--cyan); stroke-width: 2.5; }

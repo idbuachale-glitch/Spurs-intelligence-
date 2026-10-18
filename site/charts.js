@@ -7,8 +7,10 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 // { title, sub, result, score, links: [[label, href]] }. With it, the chart becomes
 // interactive: tap/hover a game to see every series' value for that game, step with
 // the arrows, and expand to full screen.
-export function lineChart({ series, labels, height = 230, yLabel = '', format = (v) => v.toFixed(1), readout = true, points = null, title = '' }) {
-  const W = 640; const H = height; const pad = { l: 40, r: 16, t: 14, b: 34 };
+export function lineChart({ series, labels, height = 230, yLabel = '', format = (v) => v.toFixed(1), readout = true, points = null, title = '', badges = null }) {
+  // badges: one { url, short } per game; drawn as tappable crest circles under the x-axis.
+  const hasBadges = Array.isArray(badges) && badges.length === labels.length;
+  const W = 640; const H = height + (hasBadges ? 48 : 0); const pad = { l: 40, r: hasBadges ? 26 : 16, t: 14, b: hasBadges ? 82 : 34 };
   const all = series.flatMap((s) => s.values).filter((v) => v !== null && v !== undefined);
   if (!all.length || labels.length < 2) return '<div class="empty small">Not enough matches to chart yet.</div>';
   const max = Math.max(...all) * 1.12 || 1; const min = Math.min(0, ...all);
@@ -22,7 +24,18 @@ export function lineChart({ series, labels, height = 230, yLabel = '', format = 
     g += `<line class="axis" x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 5" stroke-opacity="${i ? 0.8 : 1}"/><text x="${pad.l - 8}" y="${y(v) + 4}" text-anchor="end">${esc(format(v))}</text>`;
   }
   const every = Math.ceil(labels.length / 8);
-  labels.forEach((l, i) => { if (i % every === 0 || i === labels.length - 1) g += `<text x="${x(i)}" y="${H - 12}" text-anchor="middle">${esc(l)}</text>`; });
+  const br = hasBadges ? Math.max(9, Math.min(22, (W - pad.l - pad.r) / Math.max(1, labels.length - 1) / 2 - 3)) : 0;
+  const by = H - 50;
+  if (hasBadges) {
+    labels.forEach((l, i) => {
+      const b = badges[i] || {}; const cid = `bc${uid}${i}`;
+      g += `<g class="badge-pt" data-badge="${i}"><clipPath id="${cid}"><circle cx="${x(i)}" cy="${by}" r="${br - 2}"/></clipPath>
+        <circle class="badge-bg" cx="${x(i)}" cy="${by}" r="${br}"/>
+        <text x="${x(i)}" y="${by + 3}" text-anchor="middle" class="badge-txt" style="font-size:${Math.max(7, br * 0.6)}px">${esc((b.short || '').slice(0, 3))}</text>
+        ${b.url ? `<image href="${esc(b.url)}" x="${x(i) - br + 3}" y="${by - br + 3}" width="${(br - 3) * 2}" height="${(br - 3) * 2}" clip-path="url(#${cid})" preserveAspectRatio="xMidYMid meet"/>` : ''}</g>`;
+      if (i % every === 0 || i === labels.length - 1) g += `<text x="${x(i)}" y="${H - 10}" text-anchor="middle" style="font-size:13px">${esc(l)}</text>`;
+    });
+  } else labels.forEach((l, i) => { if (i % every === 0 || i === labels.length - 1) g += `<text x="${x(i)}" y="${H - 12}" text-anchor="middle">${esc(l)}</text>`; });
   const smooth = (pts) => {
     if (pts.length < 2) return '';
     let d = `M${pts[0][0]},${pts[0][1]}`;
@@ -48,7 +61,7 @@ export function lineChart({ series, labels, height = 230, yLabel = '', format = 
   // Interactive layer: a full-height tap target per game, a highlight line and enlarged dots.
   const step = labels.length > 1 ? (W - pad.l - pad.r) / (labels.length - 1) : W;
   const hits = labels.map((_, i) => `<rect class="hit" data-pt="${i}" x="${Math.max(0, x(i) - step / 2)}" y="0" width="${step}" height="${H}" fill="transparent"><title>${esc(points[i].title)}</title></rect>`).join('');
-  const marks = labels.map((_, i) => `<g class="pt-mark${i === labels.length - 1 ? ' on' : ''}" data-mark="${i}">${series.filter((s) => !s.dash).map((s) => (s.values[i] === null || s.values[i] === undefined ? '' : `<circle cx="${x(i)}" cy="${y(s.values[i])}" r="7" fill="${s.color}" stroke="var(--bg)" stroke-width="3"/>`)).join('')}</g>`).join('');
+  const marks = labels.map((_, i) => `<g class="pt-mark${i === labels.length - 1 ? ' on' : ''}" data-mark="${i}">${hasBadges ? `<circle class="badge-ring" cx="${x(i)}" cy="${by}" r="${br + 3}"/>` : ''}${series.filter((s) => !s.dash).map((s) => (s.values[i] === null || s.values[i] === undefined ? '' : `<circle cx="${x(i)}" cy="${y(s.values[i])}" r="7" fill="${s.color}" stroke="var(--bg)" stroke-width="3"/>`)).join('')}</g>`).join('');
   const ref = series.find((s) => s.ref);
   const cards = points.map((pt, i) => {
     const rows = series.map((s) => { const v = s.values[i]; return `<div class="ic-row"><span><i style="background:${s.color}"></i>${esc(s.name)}</span><strong>${v === null || v === undefined ? '—' : esc((s.fmt || format)(v))}</strong></div>`; }).join('');

@@ -375,6 +375,7 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     dataUpdatedAt: { fixtures: fixtures.retrievedAt, playerStats: maxRetrieved(histDir), matchDetail: maxRetrieved(fcDir), cups: cups.retrievedAt || null, video: status.sources['youtube-spurs']?.lastSuccess || null },
     nextMatchId: next ? next.id : null, lastMatchId: last ? last.id : null,
     statDefs: STATS.map(({ field, ...s }) => ({ ...s, sourceField: field || null })), rateDefs: RATES, supplementaryEnabled: fc.enabled(), unavailable: UNAVAILABLE, nowAvailable: NOW_AVAILABLE, posLabels: POS_LABEL,
+    teamCodes: Object.fromEntries(teams.map((t) => [t.id, t.code])), teamShort: Object.fromEntries(teams.map((t) => [t.id, t.short])),
   });
   status.lastRun = nowIso;
   status.runFilesChanged = changed;
