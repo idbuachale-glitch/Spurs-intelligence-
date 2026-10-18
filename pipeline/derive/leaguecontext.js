@@ -7,6 +7,8 @@ const LEADER_DEFS = [
   ['assists', 'assists', 'Most assists'],
   ['yellows', 'yellow_cards', 'Most yellow cards'],
   ['reds', 'red_cards', 'Most red cards'],
+  ['xg', 'expected_goals', 'Expected goals (xG)'],
+  ['xa', 'expected_assists', 'Expected assists (xA)'],
 ];
 
 // Top five (plus anyone tied with fifth, up to eight) for each measure.
@@ -25,7 +27,7 @@ export function leaders(elements, teams) {
       title, recorded: true,
       rows: picked.map(({ e, v }) => {
         const t = teamById.get(num(e.team));
-        return { name: e.web_name, teamId: num(e.team), team: t ? t.short : null, value: v, minutes: num(e.minutes), code: e.code ? String(e.code) : null };
+        return { name: e.web_name, teamId: num(e.team), team: t ? t.short : null, value: Math.round(v * 100) / 100, minutes: num(e.minutes), code: e.code ? String(e.code) : null };
       }),
     };
   }

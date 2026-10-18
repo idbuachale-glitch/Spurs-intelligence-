@@ -685,14 +685,22 @@ VIEWS.table = async () => {
   const t = await loadSeason('table.json');
   const v = t.verification || {};
   return `<div class="section-head"><h1>Premier League table</h1><span class="muted small">${esc(state.season.replace('-', '/'))}</span></div>
-  ${roundPanel(t.round)}
   <div class="panel" style="padding:6px"><div class="table-wrap"><table><thead><tr><th class="r">#</th><th>Club</th><th class="r">P</th><th class="r">W</th><th class="r">D</th><th class="r">L</th><th class="r hide-xs">GF</th><th class="r hide-xs">GA</th><th class="r">GD</th><th class="r">Pts</th><th>Form</th></tr></thead><tbody>
   ${t.rows.map((r) => `<tr class="${r.teamId === t.spurs?.teamId ? 'hl' : ''}"><td class="r">${r.position}</td><td>${crest(r.teamId)}<span class="cl-l">${esc(r.team)}</span><span class="cl-s">${esc(r.short || r.team)}</span></td><td class="r">${r.played}</td><td class="r">${r.won}</td><td class="r">${r.drawn}</td><td class="r">${r.lost}</td><td class="r hide-xs">${r.gf}</td><td class="r hide-xs">${r.ga}</td><td class="r">${r.gd > 0 ? '+' : ''}${r.gd}</td><td class="r"><strong>${r.points}</strong></td><td><span class="form-strip">${r.form.map((x) => resultChip(x, true)).join('')}</span></td></tr>`).join('')}</tbody></table></div></div>
   <p class="source">${esc(t.source)}, ordered by points, goal difference, goals scored, then head-to-head. Includes provisionally finished matches. Retrieved ${esc(fmtDateTime(t.generatedAt))}.
   ${v.fplOfficialPosition ? ` Cross-check with the Premier League's published position: ${v.fplOfficialPosition.agrees ? 'matches' : `differs (official ${v.fplOfficialPosition.position})`}.` : ''}
   ${v.footballData ? ` football-data.org check: ${v.footballData.agrees ? 'matches' : 'differs'} (${esc(fmtDateTime(v.footballData.retrievedAt))}).` : ''}</p>
-  ${leadersPanel(t.leaders)}`;
+  ${leadersPanel(t.leaders)}
+  ${xgLeadersPanel(t.leaders)}
+  ${roundPanel(t.round)}`;
 };
+// League-wide xG and xA rankings (FPL/Opta), with per-90 context.
+function xgLeadersPanel(L) {
+  if (!L || (!L.xg && !L.xa)) return '';
+  const card = (x) => `<div class="panel"><h3 style="margin-top:0">${esc(x.title)}</h3>${x.rows.length ? `<ol class="leaders">${x.rows.map((r) => `<li class="${r.teamId === state.meta.providerTeamIds?.fpl ? 'hl' : ''}"><span>${crest(r.teamId)}<strong>${esc(r.name)}</strong> <span class="faint tiny">${esc(r.team || '')}${r.minutes ? ` · ${fmtPlain((r.value / r.minutes) * 90, 2)}/90` : ''}</span></span><span class="v">${fmtPlain(r.value, 2)}</span></li>`).join('')}</ol>` : '<p class="small muted">Not available yet.</p>'}</div>`;
+  return `<section class="section"><div class="section-head"><h2>xG and xA rankings</h2><span class="muted small">All clubs · Spurs players highlighted</span></div>
+    <div class="grid two">${[L.xg, L.xa].filter(Boolean).map(card).join('')}</div><p class="source">Season totals from the FPL API (Opta expected goals and assists), with the rate per 90 minutes. xG = quality of chances a player shot from; xA = quality of chances he set up.</p></section>`;
+}
 // Spurs' next gameweek: the range of positions Spurs could hold and the other fixtures that matter.
 function roundPanel(r) {
   if (!r) return '';
