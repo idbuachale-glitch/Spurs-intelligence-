@@ -428,3 +428,8 @@ body.chart-open { overflow: hidden; }
 .sw-all summary { cursor: pointer; color: var(--cyan); font-weight: 600; min-height: 40px; display: flex; align-items: center; }
 .sw-chip { font-family: var(--display); padding: 1px 8px; border-radius: 6px; background: var(--bg-2); }
 .sw-chip.up { color: var(--win); } .sw-chip.down { color: var(--loss); }
+
+/* Progression & pressing estimates */
+.pxbar { height: 4px; border-radius: 2px; background: var(--line, rgba(255,255,255,.08)); margin: -2px 0 8px; overflow: hidden; }
+.pxbar > div { height: 100%; background: var(--cyan); border-radius: 2px; }
+.radar-note { border-top: 1px solid var(--line, rgba(255,255,255,.08)); padding-top: 8px; }

@@ -196,6 +196,22 @@ AFTER.overview = () => {
   tick(); clearInterval(window.__cd); window.__cd = setInterval(tick, 30000);
 };
 const RADAR_LABELS = { xg: 'xG', xa: 'xA', goals: 'Goals', assists: 'Assists', threat: 'Threat', creativity: 'Creativity', tackles: 'Tackles', cbi: 'Clear/Block/Int', recoveries: 'Recoveries', defcon: 'Def. contribution', xgc: 'Low xG conceded', saves: 'Saves', gc: 'Low goals conceded' };
+const RADAR_NAMES = { xg: 'expected goals', xa: 'expected assists', goals: 'goals', assists: 'assists', threat: 'attacking threat', creativity: 'creativity (chance and build-up involvement)', tackles: 'tackling', cbi: 'clearances, blocks and interceptions', recoveries: 'winning the ball back', defcon: 'overall defensive work', xgc: 'limiting chances against while on the pitch', saves: 'shot-stopping volume', gc: 'keeping goals out while on the pitch' };
+const radarKeysOf = (pct) => (pct.radarKeys || Object.keys(pct.percentiles)).filter((k) => k in pct.percentiles);
+// Plain-English read of the radar: where he shines and where he is weaker than his peers.
+function radarComment(pct, p) {
+  const items = radarKeysOf(pct).map((k) => ({ k, v: radarValue(k, pct.percentiles[k]) })).filter((x) => x.v !== null);
+  if (items.length < 3) return '';
+  const nth = (v) => ordinal(Math.max(1, Math.round(v)));
+  const list = (a) => a.map((x) => `${RADAR_NAMES[x.k] || x.k} (${nth(x.v)} percentile)`).join(a.length === 2 ? ' and ' : ', ');
+  const strong = items.filter((x) => x.v >= 60).sort((a, b) => b.v - a.v).slice(0, 3);
+  const weak = items.filter((x) => x.v <= 40).sort((a, b) => a.v - b.v).slice(0, 3);
+  const pw = state.meta.posLabels[pct.pos].toLowerCase();
+  const parts = [];
+  parts.push(strong.length ? `<strong>Shining:</strong> ${esc(list(strong))}.` : `<strong>Shining:</strong> nothing clearly above the average ${esc(pw)} yet; his best area is ${esc(list([items.slice().sort((a, b) => b.v - a.v)[0]]))}.`);
+  parts.push(weak.length ? `<strong>Weaker:</strong> ${esc(list(weak))}.` : `<strong>Weaker:</strong> no area clearly below the average ${esc(pw)}; his lowest is ${esc(list([items.slice().sort((a, b) => a.v - b.v)[0]]))}.`);
+  return `<div class="radar-note small" style="margin:10px 4px 6px;line-height:1.5">${parts.map((x) => `<p style="margin:4px 0">${x}</p>`).join('')}<p class="tiny faint" style="margin:4px 0">Compared with ${pct.peers} Premier League ${esc(pw)}s with ${pct.minMinutes}+ minutes, per 90 (FPL/Opta). Calculated, not official.</p></div>`;
+}
 const radarValue = (k, v) => (v === null || v === undefined ? null : ['xgc', 'gc'].includes(k) ? 100 - v : v);
 
 function rankTiles(ranks, keys) {
@@ -248,6 +264,7 @@ const LAB_GROUPS = {
   Dribbling: [['dribbles', 'Take-ons won', 0], ['takeOnPct', 'Take-on %', 1, 'rate'], ['touchesBox', 'Box touches', 0], ['wasFouled', 'Fouled', 0], ['dispossessed', 'Dispossessed', 0], ['dribbledPast', 'Dribbled past', 0]],
   Passing: [['passesAcc', 'Acc. passes', 0], ['passPct', 'Pass %', 1, 'rate'], ['finalThirdPasses', 'Final third', 0], ['crossesAcc', 'Crosses', 0], ['longBallsAcc', 'Long balls', 0], ['touches', 'Touches', 0]],
   Progression: [['finalThirdPasses', 'Final third', 0], ['chancesCreated', 'Chances', 0], ['touchesBox', 'Box touches', 0], ['longBallsAcc', 'Long balls', 0], ['crossesAcc', 'Crosses', 0], ['possLost', 'Poss. lost (est.)', 0, 'possLost']],
+  Pressing: [['hiDist', 'Hi-int. m', 0], ['sprints', 'Sprints', 0], ['ballWins', 'Ball wins', 0], ['groundDuelPct', 'Ground duel %', 1, 'rate'], ['fcRecoveries', 'Recov.', 0], ['distance', 'Distance m', 0]],
   Defending: [['tacklesWon', 'Tackles', 0], ['defcon', 'DefCon /game', 1, 'perGame'], ['foulsCommitted', 'Fouls', 0], ['interceptions', 'Int.', 0], ['recoveries', 'Recov.', 0], ['cbi', 'CBI', 0], ['duelsWon', 'Duels', 0]],
   Fouls: [['foulsCommitted', 'Fouls', 0], ['wasFouled', 'Fouled', 0], ['yc', 'Yellow', 0], ['rc', 'Red', 0], ['offsides', 'Offsides', 0]],
   Goalkeeping: [['saves', 'Saves', 0], ['cs', 'Clean sheets', 0], ['gc', 'Conceded', 0], ['xgotFaced', 'xGOT faced', 2], ['goalsPrevented', 'Goals prev.', 2], ['gkPassesAcc', 'Acc. passes', 0]],
@@ -290,7 +307,8 @@ AFTER.players = async () => {
     document.getElementById('lab-table').innerHTML = `<table data-sortable class="lab"><thead><tr><th class="sortable sticky-col">Player</th>${cols.map(([, l]) => `<th class="sortable r">${l}</th>`).join('')}</tr></thead>
       <tbody>${rows.map((p) => `<tr class="clickable" data-href="#/player/${p.id}"><td class="sticky-col" data-v="${esc(p.web)}"><a href="#/player/${p.id}">${esc(p.web)}</a><span class="sub">${p.pos} · ${p[comp]?.apps ?? 0} apps · ${minCol(p)}′${p.current ? '' : ` · ${esc(p.membershipLabel || 'former')}`}${p.status && p.status !== 'a' ? `<span class="st" style="color:var(--warn)">${esc(p.statusLabel)}</span>` : ''}</span></td>${cols.map((c) => cell(p, c)).join('')}</tr>`).join('')}</tbody></table>
       ${rows.length ? '' : '<div class="empty">No players match these filters.</div>'}
-      ${group === 'Progression' && rows.length ? '<p class="source" style="padding:0 8px">How each player moves the ball forward, using what the free data records: passes into the final third, chances created, touches in the opposition box, accurate long balls and crosses. Progressive passes, carries and passes into the box need where-on-the-pitch data for every touch, which only paid providers sell. Poss. lost (est.) = misplaced passes + times dispossessed. That is a minimum: failed take-ons and miscontrols are not recorded this season, so the true figure is higher.</p>' : ''}
+      ${group === 'Progression' && rows.length ? '<p class="source" style="padding:0 8px">How each player moves the ball forward, using what the free data records: passes into the final third, chances created, touches in the opposition box, accurate long balls and crosses. Final-third passes are the closest free measure of progressive passes, and box touches the closest for progressive carries; exact counts need where-on-the-pitch data for every touch, which only paid providers sell. Every player profile shows these with league percentiles. Poss. lost (est.) = misplaced passes + times dispossessed. That is a minimum: failed take-ons and miscontrols are not recorded this season, so the true figure is higher.</p>' : ''}
+      ${group === 'Pressing' && rows.length ? '<p class="source" style="padding:0 8px">Closest free measures of pressures and pressure success (estimates): Hi-int. m = running + sprinting distance, the pressing volume. Ball wins = recoveries + tackles won + interceptions, the pressing outcome. Ground duel % = ground duels won / contested. Tracking from FotMob; recorded for most but not every match.</p>' : ''}
       ${group === 'Defending' && rows.length ? '<p class="source" style="padding:0 8px">DefCon /game = FPL defensive contribution per appearance (clearances, blocks, interceptions and tackles, plus recoveries for midfielders and forwards). Fouls = fouls committed. Int. = interceptions. CBI = clearances, blocks and interceptions combined (FPL). Duels = duels won.</p>' : ''}
       ${hidden.length && rows.length ? `<p class="source" style="padding:0 8px">Not shown: ${esc(hidden.join(', '))}. The free source does not record ${hidden.length > 1 ? 'these' : 'this'} for individual players in this selection${group === 'Dribbling' ? ' (Spurs\' team take-on totals are on Team statistics)' : ''}; the column appears automatically once data exists.</p>` : ''}`;
     const t = document.querySelector('#lab-table table');
@@ -332,7 +350,7 @@ VIEWS.player = async (id) => {
   const isGK = p.pos === 'GK';
   const block = (title, cat, which) => {
     const s = p[which]; if (!s) return '';
-    const defs = statDefs().filter((d) => d.cat === cat && (d.pos === 'all' || (d.pos === 'gk' ? isGK : !isGK)));
+    const defs = statDefs().filter((d) => !d.hidden && d.cat === cat && (d.pos === 'all' || (d.pos === 'gk' ? isGK : !isGK)));
     const rates = (state.meta.rateDefs || []).filter((r) => r.cat === cat && !(isGK && ['takeOnPct', 'shotConversion', 'sotPct'].includes(r.key)));
     const rows = defs.map((d) => {
       const v = s.totals[d.key]; const cov = s.coverage?.[d.key];
@@ -363,20 +381,37 @@ VIEWS.player = async (id) => {
     ${block('Defending', 'defensive', which)}
     ${block('Discipline & FPL', 'discipline', which)}
   </div>
+  ${proxyPanelHtml(data.proxies, p)}
   <p class="source">Premier League ${esc(state.season.replace('-', '/'))}. <sup>F</sup> = FPL Core Insights (FotMob definitions); others = FPL API (Opta). "calc" = calculated rate from the same matches only. * = recorded in only some matches. Retrieved ${esc(fmtDateTime(data.generatedAt))}.</p>
-  ${pct ? `<div class="panel section"><div class="section-head"><h2>Player radar</h2><span class="muted small">vs ${pct.peers} Premier League ${esc(state.meta.posLabels[pct.pos].toLowerCase())}s</span></div>${radar(Object.entries(pct.percentiles).map(([k, v]) => ({ label: RADAR_LABELS[k] || k, a: radarValue(k, v) })), { aName: p.web })}<p class="small muted" style="text-align:center">Further out = better than more of the league. <a href="#/compare/${p.id}">Compare with another player</a></p></div>` : ''}
+  ${pct ? `<div class="panel section"><div class="section-head"><h2>Player radar</h2><span class="muted small">vs ${pct.peers} Premier League ${esc(state.meta.posLabels[pct.pos].toLowerCase())}s</span></div>${radar(radarKeysOf(pct).map((k) => ({ label: RADAR_LABELS[k] || k, a: radarValue(k, pct.percentiles[k]) })), { aName: p.web })}${radarComment(pct, p)}<p class="small muted" style="text-align:center">Further out = better than more of the league. <a href="#/compare/${p.id}">Compare with another player</a></p></div>` : ''}
   ${pct ? `<div class="panel section"><div class="section-head"><h2>Against Premier League ${esc(state.meta.posLabels[pct.pos].toLowerCase())}s</h2><span class="muted small">Percentile among ${pct.peers} with ${pct.minMinutes}+ minutes</span></div>
     ${Object.entries(pct.percentiles).filter(([, v]) => v !== null).map(([k, v]) => { const d = statDefs().find((x) => x.key === k); return `<div class="pbar"><span>${esc(d ? d.label : k)} /90</span><div class="track"><div class="fill" style="width:${v}%"></div></div><span class="num" style="text-align:right">${v}</span></div>`; }).join('')}
     <p class="source">Per-90 values from FPL season totals (all clubs, so a mid-season signing's figures include his previous PL club). For xG conceded and goals conceded, a lower percentile is better.</p></div>` : ''}
-  ${matches.length > 1 ? `<div class="panel section"><h2>Form, match by match</h2>${lineChart({ labels: matches.map((m) => fmtDate(m.kickoff, { day: 'numeric', month: 'short' })), series: isGK ? [{ name: 'Saves', color: 'var(--cyan)', values: matches.map((m) => m.saves ?? m.gkSaves) }, { name: 'Goals conceded', color: 'var(--loss)', values: matches.map((m) => m.gc) }] : [{ name: 'xG', color: 'var(--cyan)', values: matches.map((m) => m.xg) }, { name: 'xA', color: 'var(--draw)', values: matches.map((m) => m.xa) }], format: (v) => v.toFixed(isGK ? 0 : 2), title: `${p.web}, match by match`,
+  ${matches.length > 1 ? `<div class="panel section"><h2>Form, match by match</h2>${lineChart({ labels: matches.map((m) => fmtDate(m.kickoff, { day: 'numeric', month: 'short' })), series: isGK ? [{ name: 'Saves', color: 'var(--cyan)', values: matches.map((m) => m.saves ?? m.gkSaves) }, { name: 'Goals conceded', color: 'var(--loss)', values: matches.map((m) => m.gc) }] : p.pos === 'DEF' ? [{ name: 'Clear./blocks/int.', color: 'var(--cyan)', values: matches.map((m) => m.cbi) }, { name: 'Recoveries', color: 'var(--draw)', values: matches.map((m) => m.recoveries) }, { name: 'Tackles', color: 'var(--win)', values: matches.map((m) => m.tackles), dash: true }] : [{ name: 'xG', color: 'var(--cyan)', values: matches.map((m) => m.xg) }, { name: 'xA', color: 'var(--draw)', values: matches.map((m) => m.xa) }], format: (v) => v.toFixed(isGK || p.pos === 'DEF' ? 0 : 2), title: `${p.web}, match by match`,
     points: matches.map((m) => ({ title: `${m.home ? 'v' : '@'} ${oppName(m)}`, sub: `${fmtDate(m.kickoff, { weekday: 'short', day: 'numeric', month: 'short' })} · ${m.comp} · ${m.minutes ?? 0} min${m.goals ? ` · ${m.goals} goal${m.goals > 1 ? 's' : ''}` : ''}${m.assists ? ` · ${m.assists} assist${m.assists > 1 ? 's' : ''}` : ''}`, result: m.result, links: [['Match Centre', `#/match/${encodeURIComponent(m.matchId)}`], ...(m.comp === 'Premier League' ? [['Match breakdown', `#/breakdown/${encodeURIComponent(m.matchId)}`]] : [])] })) })}</div>` : ''}
   ${!isGK ? `<div class="panel section"><div class="section-head"><h2>Shot map</h2><select class="ctl" id="p-shot-match" aria-label="Match"><option value="">All matches (${(data.shots || []).length} shots)</option>${[...new Map((data.shots || []).map((x) => [x.matchId, x])).values()].map((x) => `<option value="${esc(x.matchId)}">${esc(fmtDate(x.kickoff, { day: 'numeric', month: 'short' }))} v ${esc(x.opponent)}</option>`).join('')}</select></div>
     <div id="p-shots">${shotMap(data.shots || [])}</div><p class="source">Shot locations from FotMob via FPL Core Insights, all competitions; updated after every match. About one shot in five has no player attached in the source and is not shown.</p></div>` : ''}
-  <div class="panel section"><h2>Match log</h2><div class="table-wrap"><table data-sortable class="stack"><thead><tr><th class="sortable">Date</th><th>Match</th><th>Comp</th><th class="sortable r">Min</th><th class="sortable r">G</th><th class="sortable r">A</th><th class="sortable r">xG</th><th class="sortable r">xA</th><th class="sortable r">Shots</th><th class="sortable r">Chances</th><th class="sortable r">Recov.</th>${isGK ? '<th class="sortable r">Saves</th>' : ''}</tr></thead><tbody>
-    ${matches.slice().reverse().map((m) => `<tr><td data-v="${esc(m.kickoff)}" data-label="Date">${esc(fmtDate(m.kickoff, { day: 'numeric', month: 'short' }))}</td><td data-label="Match"><a href="#/match/${encodeURIComponent(m.matchId)}">${m.home ? 'v' : '@'} ${esc(oppName(m))}</a></td><td data-label="Comp">${esc(m.comp === 'Premier League' ? 'PL' : m.comp)}</td>${['minutes', 'goals', 'assists', 'xg', 'xa', 'shots', 'chancesCreated', 'recoveries', ...(isGK ? ['saves'] : [])].map((k) => `<td class="r" data-v="${m[k] ?? ''}" data-label="${k}">${fmt(m[k], ['xg', 'xa'].includes(k) ? 2 : 0)}</td>`).join('')}</tr>`).join('')}
+  <div class="panel section"><h2>Match log</h2><div class="table-wrap"><table data-sortable class="stack"><thead><tr><th class="sortable">Date</th><th>Match</th><th>Comp</th><th class="sortable r">Min</th><th class="sortable r">G</th><th class="sortable r">A</th><th class="sortable r">xG</th><th class="sortable r">xA</th>${p.pos === 'DEF' ? '<th class="sortable r">Tackles</th><th class="sortable r">CBI</th>' : '<th class="sortable r">Shots</th><th class="sortable r">Chances</th>'}<th class="sortable r">Recov.</th>${isGK ? '<th class="sortable r">Saves</th>' : ''}</tr></thead><tbody>
+    ${matches.slice().reverse().map((m) => `<tr><td data-v="${esc(m.kickoff)}" data-label="Date">${esc(fmtDate(m.kickoff, { day: 'numeric', month: 'short' }))}</td><td data-label="Match"><a href="#/match/${encodeURIComponent(m.matchId)}">${m.home ? 'v' : '@'} ${esc(oppName(m))}</a></td><td data-label="Comp">${esc(m.comp === 'Premier League' ? 'PL' : m.comp)}</td>${['minutes', 'goals', 'assists', 'xg', 'xa', ...(p.pos === 'DEF' ? ['tackles', 'cbi'] : ['shots', 'chancesCreated']), 'recoveries', ...(isGK ? ['saves'] : [])].map((k) => `<td class="r" data-v="${m[k] ?? ''}" data-label="${LOG_LABELS[k] || k}">${fmt(m[k], ['xg', 'xa'].includes(k) ? 2 : 0)}</td>`).join('')}</tr>`).join('')}
   </tbody></table></div></div>
-  <div class="panel section flat"><h3>Not available from the free data sources</h3><div class="unavail">${[...un.identity, ...(isGK ? un.goalkeeping : [...un.attacking, 'Progressive passes', ...un.defensive])].map((u) => `<span>${esc(u)}</span>`).join('')}${p.season.totals.dribbles === null && !isGK ? '<span>Take-ons (not recorded per player this season)</span>' : ''}</div></div>`;
+  <div class="panel section flat"><h3>Not available from the free data sources</h3><div class="unavail">${[...un.identity, ...(isGK ? un.goalkeeping : [...un.attacking, ...un.defensive])].map((u) => `<span>${esc(u)}</span>`).join('')}${p.season.totals.dribbles === null && !isGK ? '<span>Take-ons (not recorded per player this season)</span>' : ''}</div></div>`;
 };
+const LOG_LABELS = { minutes: 'Minutes', goals: 'Goals', assists: 'Assists', xg: 'xG', xa: 'xA', shots: 'Shots', chancesCreated: 'Chances created', recoveries: 'Recoveries', saves: 'Saves', tackles: 'Tackles', cbi: 'Clearances, blocks & int.' };
+// Progression & pressing: closest free measures for progressive passes, carries and pressures.
+function proxyPanelHtml(px, p) {
+  if (!px || !px.groups) return '';
+  const val = (it) => (it.value === null ? '<span class="na">—</span>' : it.kind === 'rate' ? `${fmtPlain(it.value, 1)}%` : `${it.key === 'hiDist' ? Math.round(it.value).toLocaleString() : fmtPlain(it.value, 2)}<small style="white-space:nowrap">/90</small>`);
+  const avg = (it) => (it.leagueAvg === null ? '' : `<span class="lrank">League ${esc(state.meta.posLabels[px.pos].toLowerCase())} avg ${it.kind === 'rate' ? `${fmtPlain(it.leagueAvg, 1)}%` : it.key === 'hiDist' ? Math.round(it.leagueAvg).toLocaleString() : fmtPlain(it.leagueAvg, 2)}</span>`);
+  const groups = px.groups.map((g) => `<div class="panel"><div class="section-head"><h3 style="margin:0">${esc(g.title)}</h3><span class="label-analysis">Estimate</span></div>
+    <div class="statlist">${g.items.map((it) => `<div class="statrow"><span>${it.headline ? '<strong>' : ''}${esc(it.label)}${it.headline ? '</strong>' : ''}${avg(it)}</span><span class="v">${val(it)}${it.pct !== null ? `<span class="rk-chip">${ordinal(it.pct)} pct</span>` : ''}</span></div>${it.pct !== null ? `<div class="pxbar" role="img" aria-label="${it.pct}th percentile"><div style="width:${it.pct}%"></div></div>` : ''}`).join('')}</div>
+    <p class="tiny faint" style="margin:8px 0 0"><strong>Exact stat:</strong> ${esc(g.exact)} <strong>Why these:</strong> ${esc(g.why)}</p></div>`).join('');
+  const short = px.minutes !== null && px.minutes < px.minMinutes;
+  return `<div class="section"><div class="section-head"><h2>Progression &amp; pressing</h2><span class="muted small">Closest free measures</span></div>
+    ${short ? `<div class="banner info">${esc(p.web)} has ${px.minutes} Premier League minutes; percentiles appear after ${px.minMinutes}.</div>` : ''}
+    ${px.minutes === null ? '<div class="banner info">No Premier League match data for this player yet.</div>' : ''}
+    <div class="grid three">${groups}</div>
+    <p class="source">${esc(px.label)} Source: ${esc(px.source)}. Per 90 minutes, counting only matches where the measure was recorded.</p></div>`;
+}
 let teamNames = null;
 const oppName = (m) => m.opponent || (m.opponentTeamId && teamNames?.get(m.opponentTeamId)) || 'opponent';
 AFTER.player = async (id) => {
@@ -404,7 +439,7 @@ VIEWS.compare = async (a = '', b = '') => {
     const [fa, fb] = await Promise.all([loadSeason(`players/${A.id}.json`, state.season, { optional: true }), loadSeason(`players/${B.id}.json`, state.season, { optional: true })]);
     const pa = fa?.percentiles; const pb = fb?.percentiles;
     if (pa && pb) {
-      const keys = Object.keys(pa.percentiles).filter((k) => k in pb.percentiles);
+      const keys = (pa.pos === pb.pos ? radarKeysOf(pa) : Object.keys(pa.percentiles)).filter((k) => k in pb.percentiles);
       radarHtml = `<div class="panel section"><div class="section-head"><h2>Radar</h2><span class="muted small">${pa.pos === pb.pos ? `Percentiles vs Premier League ${esc(state.meta.posLabels[pa.pos].toLowerCase())}s` : 'Different positions: each is ranked against his own position'}</span></div>${radar(keys.map((k) => ({ label: RADAR_LABELS[k] || k, a: radarValue(k, pa.percentiles[k]), b: radarValue(k, pb.percentiles[k]) })), { aName: A.web, bName: B.web })}</div>`;
     } else radarHtml = '<div class="banner info section">A radar needs enough Premier League minutes for both players (about 40% of the matches played so far).</div>';
   }

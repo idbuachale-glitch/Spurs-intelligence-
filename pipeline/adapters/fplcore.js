@@ -70,7 +70,7 @@ export async function fetchRound(season, tournament, gw, clubCode, clubSlug = 't
   // Every Premier League player's match row (trimmed to the columns we use), so Spurs
   // players can be compared with their whole position group across the league.
   const processedIds = new Set(allMatches.filter((m) => m.player_stats_processed === 'True').map((m) => m.match_id));
-  const keep = ['player_id', 'match_id', 'minutes_played', 'goals', 'assists', ...Object.values(PLAYER_FIELDS), 'accurate_passes_percent', 'aerial_duels_won_percent', 'successful_dribbles_percent'];
+  const keep = ['player_id', 'match_id', 'minutes_played', 'goals', 'assists', ...Object.values(PLAYER_FIELDS), 'accurate_passes_percent', 'aerial_duels_won_percent', 'successful_dribbles_percent', 'ground_duels_won_percent'];
   const leaguePlayers = tournament === 'Premier League' ? players.filter((r) => processedIds.has(r.match_id) && Number(r.minutes_played) > 0).map((r) => Object.fromEntries(keep.filter((k) => r[k] !== undefined && r[k] !== '').map((k) => [k, r[k]]))) : [];
   return { matches, players: mine(players), shots: mine(shots), momentum: mine(momentum), xgMinute: mine(xgMinute), leagueMatches, leaguePlayers };
 }
@@ -90,7 +90,10 @@ export const PLAYER_FIELDS = {
   gkSaves: 'saves', xgotFaced: 'xgot_faced', goalsPrevented: 'goals_prevented', sweeperActions: 'sweeper_actions', highClaims: 'high_claim', savesInBox: 'saves_inside_box',
   penScored: 'penalties_scored', distance: 'distance_covered', sprints: 'number_of_sprints',
   groundDuelsWon: 'ground_duels_won', headedClearances: 'headed_clearances', gkPassesAcc: 'gk_accurate_passes', gkLongBallsAcc: 'gk_accurate_long_balls',
+  fcRecoveries: 'recoveries', runDist: 'running_distance', sprintDist: 'sprinting_distance',
 };
+// Tracking distances are physical measurements, never "blank means zero".
+const NO_ZERO_FILL = new Set(['xgot', 'xgotFaced', 'goalsPrevented', 'distance', 'sprints', 'runDist', 'sprintDist']);
 
 // Columns that hold at least one value for a player who featured in this match. A
 // column that is blank for everyone was not recorded for the match (not "all zero").
@@ -110,7 +113,7 @@ export function playerRow(r, matchProcessed, recorded = null) {
   for (const [k, f] of Object.entries(PLAYER_FIELDS)) {
     const v = num(r[f]);
     const columnRecorded = !recorded || recorded.has(f);
-    out[k] = v !== null ? v : (played && columnRecorded && !PCT_FIELDS.has(f) && !['xgot', 'xgotFaced', 'goalsPrevented', 'distance', 'sprints'].includes(k) ? 0 : null);
+    out[k] = v !== null ? v : (played && columnRecorded && !PCT_FIELDS.has(f) && !NO_ZERO_FILL.has(k) ? 0 : null);
   }
   if (played) { out.goals ??= 0; out.assists ??= 0; }
   // Goalkeepers' passing is recorded in goalkeeper-only columns; the outfield passing
@@ -124,6 +127,13 @@ export function playerRow(r, matchProcessed, recorded = null) {
   out.dribbleAtt = att(out.dribbles, 'successful_dribbles_percent');
   out.passesAtt = att(out.passesAcc, 'accurate_passes_percent');
   out.aerialAtt = att(out.aerialWon, 'aerial_duels_won_percent');
+  out.groundDuelAtt = att(out.groundDuelsWon, 'ground_duels_won_percent');
+  // Closest free stand-ins for metrics that need paid event data (labelled "est." in the UI):
+  // high-intensity distance (running + sprinting) as pressing volume, and ball-winning
+  // actions (recoveries + tackles won + interceptions) as pressing outcome.
+  // A blank sprint distance alongside no recorded sprints means the player did not sprint.
+  out.hiDist = out.runDist !== null && (out.sprintDist !== null || !out.sprints) ? out.runDist + (out.sprintDist ?? 0) : null;
+  out.ballWins = out.fcRecoveries !== null && out.tacklesWon !== null && out.interceptions !== null ? out.fcRecoveries + out.tacklesWon + out.interceptions : null;
   out.starter = out.startMin === 0 ? true : out.startMin > 0 ? false : null;
   return out;
 }

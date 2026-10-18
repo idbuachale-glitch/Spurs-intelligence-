@@ -40,7 +40,7 @@ const METRICS = [
   ['gkPassesAcc', 'Accurate passes (distribution)', 'p90', ['GK'], false, 'is heavily involved in build-up', 'is less involved in build-up'],
   ['gkLongBallsAcc', 'Accurate long balls (distribution)', 'p90', ['GK'], false, 'distributes accurately long', 'offers little accurate long distribution'],
 ];
-const RATE_DEF = { passPct: ['passesAcc', 'passesAtt', 30], aerialPct: ['aerialWon', 'aerialAtt', 6], duelPct: ['duelsWon', 'duelsTot', 12] };
+const RATE_DEF = { groundDuelPct: ['groundDuelsWon_r', 'groundDuelAtt', 10], passPct: ['passesAcc', 'passesAtt', 30], aerialPct: ['aerialWon', 'aerialAtt', 6], duelPct: ['duelsWon', 'duelsTot', 12] };
 
 // Aggregate every league player's match rows into per-player totals.
 export function fotmobPool(rows, elementsById) {
@@ -62,6 +62,8 @@ export function fotmobPool(rows, elementsById) {
       if (row.passesAcc !== null && row.passesAtt !== null) { add('passesAcc', row.passesAcc); add('passesAtt', row.passesAtt); }
       if (row.aerialWon !== null && row.aerialAtt !== null) { add('aerialWon_r', row.aerialWon); add('aerialAtt', row.aerialAtt); }
       if (row.duelsWon !== null && row.duelsLost !== null) { add('duelsWon', row.duelsWon); add('duelsTot', row.duelsWon + row.duelsLost); }
+      for (const k of PROXY_P90) if (!METRICS.some((m) => m[0] === k)) add(k, row[k]);
+      if (row.groundDuelsWon !== null && row.groundDuelAtt !== null) { add('groundDuelsWon_r', row.groundDuelsWon); add('groundDuelAtt', row.groundDuelAtt); }
       pool.set(row.elementId, p);
     }
   }
@@ -112,3 +114,39 @@ export function strengthsProfile({ player, fotPool, fplPct, minMinutes }) {
   return { pos, posWord, minutes: me?.minutes ?? null, minMinutes, metrics: out.sort((a, b) => b.score - a.score), strengths, weaknesses, text: parts.join(' '), label: LABEL };
 }
 const LABEL = 'Calculated from match data, comparing per-90 figures and success rates with every Premier League player in the same position. Analysis, not official fact.';
+
+// ---------- Progression & pressing: closest free measures ----------
+// Exact progressive passes, carries and pressures need every touch's pitch location
+// (paid event data). These are the nearest measures the free data records, each shown
+// with the player's per-90 value and his percentile among league players in his position.
+// Every figure is labelled an estimate in the UI.
+export const PROXY_GROUPS = [
+  { id: 'progPasses', title: 'Progressive passes', exact: 'Passes that move the ball at least 10 m towards goal (or into the box).',
+    why: 'Passes into the final third are the closest recorded measure: most progressive passes end there. Accurate long balls add switches and line-breaking balls from deep; chances created are the final forward pass.',
+    items: [['finalThirdPasses', 'Passes into the final third', 'p90', true], ['longBallsAcc', 'Accurate long balls', 'p90'], ['chancesCreated', 'Chances created', 'p90']] },
+  { id: 'carries', title: 'Carries & progressive carries', exact: 'Times the player runs with the ball, and carries of 10 m+ towards goal.',
+    why: 'Touches in the opposition box show how often he arrives in the box with the ball; fouls won are mostly drawn while carrying. Take-ons would be the best measure, but the source stopped recording them per player this season.',
+    items: [['touchesBox', 'Touches in the opposition box', 'p90', true], ['wasFouled', 'Fouls won', 'p90'], ['touches', 'Touches (involvement)', 'p90']] },
+  { id: 'pressing', title: 'Pressures & pressure success', exact: 'Times the player closes down an opponent on the ball, and how often his team wins it back within 5 seconds.',
+    why: 'High-intensity running and sprints measure pressing volume (pressing is run at high speed). Ball-winning actions and ground duel success measure the outcome: winning the ball back.',
+    items: [['hiDist', 'High-intensity distance (m)', 'p90', true], ['sprints', 'Sprints', 'p90'], ['ballWins', 'Ball-winning actions', 'p90', true], ['groundDuelPct', 'Ground duel success %', 'rate']] },
+];
+const PROXY_P90 = [...new Set(PROXY_GROUPS.flatMap((g) => g.items.filter((i) => i[2] === 'p90').map((i) => i[0])))];
+
+export function proxyPanel({ player, fotPool, minMinutes }) {
+  if (player.pos === 'GK') return null;
+  const me = fotPool.get(player.elementId);
+  const peers = [...fotPool.values()].filter((x) => x.pos === player.pos && x.minutes >= minMinutes);
+  const groups = PROXY_GROUPS.map((g) => ({
+    id: g.id, title: g.title, exact: g.exact, why: g.why,
+    items: g.items.map(([key, label, kind, headline]) => {
+      const value = me ? valueOf(me, key, kind) : null;
+      const vals = peers.map((x) => valueOf(x, key, kind)).filter((v) => v !== null);
+      const enough = me && me.minutes >= minMinutes && vals.length >= 8;
+      return { key, label, kind, headline: !!headline, value: value === null ? null : round(value, kind === 'rate' ? 1 : key === 'hiDist' ? 0 : 2),
+        pct: value !== null && enough ? pctRank(value, vals) : null, leagueAvg: vals.length >= 8 ? round(vals.reduce((a, b) => a + b, 0) / vals.length, kind === 'rate' ? 1 : key === 'hiDist' ? 0 : 2) : null, peers: vals.length };
+    }),
+  }));
+  return { pos: player.pos, minutes: me?.minutes ?? null, minMinutes, groups, source: 'FotMob match data via FPL Core Insights (Premier League only)',
+    label: 'Estimates: closest measures the free data records, not the exact statistics. Percentile = share of Premier League players in the same position he is ahead of.' };
+}

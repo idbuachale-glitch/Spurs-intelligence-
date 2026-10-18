@@ -68,6 +68,13 @@ export const STATS = [
   { key: 'groundDuelsWon', label: 'Ground duels won', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore' },
   { key: 'headedClearances', label: 'Headed clearances', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore' },
   { key: 'dribbledPast', label: 'Dribbled past', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore' },
+  { key: 'groundDuelAtt', label: 'Ground duels contested (derived)', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore', derivedAttempts: true, hidden: true },
+  // Physical tracking and closest-free stand-ins for progression / pressing metrics.
+  { key: 'fcRecoveries', label: 'Ball recoveries (FotMob)', cat: 'pressing', pos: 'outfield', per90: true, src: 'fplcore', hidden: true },
+  { key: 'ballWins', label: 'Ball-winning actions (recoveries + tackles won + interceptions)', cat: 'pressing', pos: 'outfield', per90: true, src: 'fplcore' },
+  { key: 'hiDist', label: 'High-intensity distance (running + sprinting, m)', cat: 'pressing', pos: 'outfield', per90: true, src: 'fplcore' },
+  { key: 'sprints', label: 'Sprints', cat: 'pressing', pos: 'outfield', per90: true, src: 'fplcore' },
+  { key: 'distance', label: 'Distance covered (m)', cat: 'pressing', pos: 'all', per90: true, src: 'fplcore' },
   { key: 'foulsCommitted', label: 'Fouls committed', cat: 'discipline', pos: 'all', per90: true, src: 'fplcore' },
   { key: 'gkSaves', label: 'Saves (FotMob)', cat: 'goalkeeping', pos: 'gk', per90: true, src: 'fplcore' },
   { key: 'xgotFaced', label: 'xGOT faced', cat: 'goalkeeping', pos: 'gk', per90: true, dp: 2, src: 'fplcore' },
@@ -86,6 +93,8 @@ export const RATES = [
   { key: 'passPct', label: 'Pass accuracy %', num: 'passesAcc', den: 'passesAtt', src: 'fplcore', cat: 'passing' },
   { key: 'tackleWinPct', label: 'Tackle success %', num: 'tacklesWon', den: 'tacklesAtt', src: 'fplcore', cat: 'defensive' },
   { key: 'aerialPct', label: 'Aerial duel success %', num: 'aerialWon', den: 'aerialAtt', src: 'fplcore', cat: 'defensive' },
+  { key: 'groundDuelPct', label: 'Ground duel success %', num: 'groundDuelsWon', den: 'groundDuelAtt', src: 'fplcore', cat: 'defensive',
+    note: 'Contested duels are derived from wins and the win %; matches where every ground duel was lost cannot be counted.' },
   { key: 'duelPct', label: 'Duel success %', num: 'duelsWon', den: null, src: 'fplcore', cat: 'defensive' },
   { key: 'shotConversion', label: 'Shot conversion %', num: 'goals', den: 'shots', src: 'fplcore', cat: 'attacking' },
   { key: 'sotPct', label: 'Shots on target %', num: 'sot', den: 'shots', src: 'fplcore', cat: 'attacking' },
@@ -93,9 +102,9 @@ export const RATES = [
 
 // What the free sources do NOT provide. Shown in the UI so gaps are never hidden.
 export const UNAVAILABLE = {
-  attacking: ['Carries & progressive carries'],
-  passing: ['Pass maps & pass combinations (passer → receiver)', 'Heat maps / touch locations', 'Progressive passes', 'Passes into the penalty area', 'Through balls'],
-  defensive: ['Pressures & pressure success'],
+  attacking: [],
+  passing: ['Pass maps & pass combinations (passer → receiver)', 'Heat maps / touch locations', 'Passes into the penalty area', 'Through balls'],
+  defensive: [],
   goalkeeping: [],
   identity: ['Height', 'Preferred foot', 'Contract expiry'],
   team: ['Pressing intensity (PPDA)', 'Formation'],
@@ -117,6 +126,7 @@ export const NOW_AVAILABLE = [
   ['First- and second-half splits', 'Team statistics, Match breakdown'],
   ['Set-piece takers (corners, free kicks, penalties)', 'Team statistics, player profiles'],
   ['Possession lost (estimate: misplaced passes + dispossessed)', 'Player Lab (Progression)'],
+  ['Progressive passes, carries & progressive carries, pressures & pressure success — estimated from the closest free measures (exact counts need paid event data)', 'Player profiles (Progression & pressing), Player Lab (Progression / Pressing)'],
   ['Ball progression substitutes (final-third passes, chances, box touches, long balls, crosses) in place of progressive passes and carries', 'Player Lab (Progression)'],
 ];
 

@@ -48,13 +48,16 @@ export const FEATURE_LABELS = { xg: 'xG', xa: 'xA', goals: 'Goals', assists: 'As
 export const FEATURES = {
   FWD: ['xg', 'xa', 'goals', 'threat', 'creativity', 'recoveries', 'tackles'],
   MID: ['xg', 'xa', 'threat', 'creativity', 'recoveries', 'tackles', 'cbi'],
-  DEF: ['cbi', 'tackles', 'recoveries', 'xa', 'xg', 'xgc', 'creativity'],
+  DEF: ['cbi', 'tackles', 'recoveries', 'defcon', 'xgc', 'gc', 'creativity', 'xa', 'xg'],
   GK: ['saves', 'xgc', 'gc', 'recoveries'],
 };
+// Radar axes: the measures that matter most for the position. Defenders keep xG/xA in
+// the percentile list but the radar shows defending (plus creativity for build-up).
+export const RADAR_FEATURES = { DEF: ['cbi', 'tackles', 'recoveries', 'defcon', 'xgc', 'gc', 'creativity'] };
 const KEY_METRICS = {
   FWD: [['xg', 'xG per 90'], ['xa', 'xA per 90'], ['threat', 'Threat per 90']],
   MID: [['xa', 'xA per 90'], ['xg', 'xG per 90'], ['recoveries', 'Recoveries per 90'], ['tackles', 'Tackles per 90']],
-  DEF: [['cbi', 'Clearances/blocks/interceptions per 90'], ['tackles', 'Tackles per 90'], ['recoveries', 'Recoveries per 90'], ['xa', 'xA per 90']],
+  DEF: [['cbi', 'Clearances/blocks/interceptions per 90'], ['tackles', 'Tackles per 90'], ['recoveries', 'Recoveries per 90'], ['defcon', 'Defensive contribution per 90'], ['xgc', 'xG conceded per 90 (lower is better)'], ['xa', 'xA per 90']],
   GK: [['saves', 'Saves per 90'], ['xgc', 'xG conceded per 90 (lower is better)']],
 };
 
@@ -64,7 +67,7 @@ export function playerPercentiles(pool, code) {
   const peers = pool.filter((x) => x.pos === p.pos && x.f);
   const out = {};
   for (const k of FEATURES[p.pos]) out[k] = percentileRank(p.f[k], peers.map((x) => x.f[k]));
-  return { pos: p.pos, peers: peers.length, minMinutes: MIN_MINUTES, values: p.f, percentiles: out };
+  return { pos: p.pos, peers: peers.length, minMinutes: MIN_MINUTES, values: p.f, percentiles: out, radarKeys: RADAR_FEATURES[p.pos] || FEATURES[p.pos] };
 }
 
 export function scoutingSummary(p, pct) {
