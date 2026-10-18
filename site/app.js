@@ -39,8 +39,13 @@ function buildNav() {
   const sheet = document.getElementById('more-sheet');
   sheet.innerHTML = NAV.filter(([k]) => !BOTTOM.includes(k)).map(([k, l, i]) => `<a href="#/${k}" data-k="${k}">${icon(i)}${l}</a>`).join('');
   const btn = document.getElementById('more-btn');
-  btn.addEventListener('click', () => { const open = sheet.classList.toggle('open'); btn.setAttribute('aria-expanded', open); });
-  sheet.addEventListener('click', () => { sheet.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); });
+  const back = document.createElement('div'); back.className = 'more-backdrop'; document.body.appendChild(back);
+  const setOpen = (open) => { sheet.classList.toggle('open', open); back.classList.toggle('open', open); btn.setAttribute('aria-expanded', open); };
+  btn.addEventListener('click', () => setOpen(!sheet.classList.contains('open')));
+  sheet.addEventListener('click', (e) => { if (e.target.closest('a')) setOpen(false); });
+  back.addEventListener('click', () => setOpen(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); });
+  window.addEventListener('hashchange', () => setOpen(false));
 }
 
 async function route() {
