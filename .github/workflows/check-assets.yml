@@ -1,0 +1,9 @@
+name: Check asset URLs
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in https://resources.premierleague.com/premierleague/badges/rb/t6.svg https://resources.premierleague.com/premierleague/badges/100/t6.png https://resources.premierleague.com/premierleague/badges/70/t6.png https://resources.premierleague.com/premierleague25/badges/t6.svg https://resources.premierleague.com/premierleague25/badges/100/t6.png; do
+            r=$(curl -s -o /tmp/f -w '%{http_code} %{content_type} %{size_download}' --max-time 15 "$u"); echo "::notice::$u -> $r"; done
