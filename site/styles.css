@@ -216,6 +216,22 @@ select.ctl, input.ctl { background: var(--panel); border: 1px solid var(--line);
 .video-card { display: flex; flex-direction: column; gap: 8px; }
 .video-card .thumb { position: relative; aspect-ratio: 16 / 9; border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-2); border: 0; padding: 0; cursor: pointer; }
 .video-card .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.video-card .thumb .play { position: absolute; inset: auto auto 10px 10px; width: 38px; height: 38px; border-radius: 50%; background: rgba(4,10,28,.75); display: grid; place-items: center; color: var(--cyan); border: 1px solid var(--cyan); }
+.video-card .thumb .play svg { width: 20px; height: 20px; }
+.vmeta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.vcat { display: inline-block; width: fit-content; font-family: var(--display); font-size: 0.72rem; letter-spacing: .06em; text-transform: uppercase; padding: 3px 9px; border-radius: 4px; background: color-mix(in srgb, var(--cyan) 14%, transparent); color: var(--cyan); }
+.vcat.c-stats { background: color-mix(in srgb, var(--win) 14%, transparent); color: var(--win); }
+.vcat.c-player { background: color-mix(in srgb, var(--draw) 16%, transparent); color: var(--draw); }
+.vcat.c-preview, .vcat.c-highlights { background: var(--bg-2); color: var(--muted); }
+.vtopics { display: flex; flex-wrap: wrap; gap: 4px; }
+.vtopics span { font-size: 0.72rem; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.vmatch { border-top: 1px solid var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.vstats { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.82rem; color: var(--muted); align-items: center; }
+.vstats b { font-family: var(--display); color: var(--text); font-weight: 600; }
+.vstats .vres { white-space: nowrap;  font-family: var(--display); font-weight: 700; padding: 1px 8px; border-radius: 4px; color: var(--text); background: var(--bg-2); }
+.vstats .vres.w { color: var(--win); } .vstats .vres.l { color: var(--loss); } .vstats .vres.d { color: var(--draw); }
+.feature { border-color: color-mix(in srgb, var(--cyan) 40%, var(--line)); }
+.lede { color: var(--muted); max-width: 72ch; margin: -4px 0 16px; }
 .video-card iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: var(--radius-sm); }
 
 /* ---------- Analyst ---------- */

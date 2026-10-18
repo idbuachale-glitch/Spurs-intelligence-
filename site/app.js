@@ -471,30 +471,67 @@ AFTER.tactics = async () => {
 };
 
 // ---------------- Video Evidence Room ----------------
+// Only analysis of how Spurs play: match reviews, tactical breakdowns, stats/data
+// videos and player-role analysis. Highlights live on each match page instead.
+const statStrip = (m) => m ? `<div class="vstats">
+  <span class="vres ${m.result === 'W' ? 'w' : m.result === 'L' ? 'l' : 'd'}">${esc(m.result || '')} ${esc(m.score)}</span>
+  ${m.xg !== null && m.xga !== null ? `<span><b>${fmt(m.xg, 2)}–${fmt(m.xga, 2)}</b> xG</span>` : ''}
+  ${m.possession !== null ? `<span><b>${fmt(m.possession, 0)}%</b> poss.</span>` : ''}
+  ${m.shots !== null ? `<span><b>${fmt(m.shots, 0)}–${fmt(m.shotsAgainst, 0)}</b> shots</span>` : ''}
+  ${m.boxTouches !== null ? `<span><b>${fmt(m.boxTouches, 0)}</b> box touches</span>` : ''}</div>` : '';
+const videoCard = (v) => `<article class="panel video-card">
+  <button class="thumb" data-vid="${esc(v.videoId)}" aria-label="Play ${esc(v.title)}"><img loading="lazy" alt="" src="${esc(v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`)}"><span class="play">${icon('i-play')}</span></button>
+  <div class="vmeta"><span class="vcat c-${esc(v.category)}">${esc(v.categoryLabel)}</span><span class="pill">${esc(v.tierLabel)}</span></div>
+  <strong>${esc(v.title)}</strong>
+  <span class="small muted">${esc(v.channel)} · ${esc(fmtDate(v.published, { day: 'numeric', month: 'short', year: 'numeric' }))}</span>
+  ${v.topics?.length ? `<div class="vtopics">${v.topics.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''}
+  ${v.players?.length ? `<span class="small">Players: ${v.players.map((p) => `<a href="#/player/${encodeURIComponent(p.id)}">${esc(p.name)}</a>`).join(', ')}</span>` : ''}
+  ${v.matchId ? `<div class="vmatch"><span class="small">Match: <a href="#/match/${encodeURIComponent(v.matchId)}">${esc(v.opponent)}</a> · ${esc(v.competition)}</span>${statStrip(v.matchStats)}${v.matchStats ? `<a class="small" href="#/breakdown/${encodeURIComponent(v.matchId)}">Check the claims against the data →</a>` : ''}</div>` : ''}
+  <a class="small" href="${esc(v.url)}" target="_blank" rel="noopener">Open on YouTube</a></article>`;
+
 VIEWS.video = async () => {
   const ev = await loadSeason('evidence.json', state.season, { optional: true });
   const items = ev ? ev.items : [];
-  const kinds = { highlights: 'Match highlights', goals: 'Goals', interview: 'Interviews & reaction', press: 'Press conferences', preview: 'Previews', other: 'Other club video' };
-  return `<div class="section-head"><h1>Video Evidence Room</h1><span class="muted small">${items.length} official videos indexed</span></div>
-  <div class="banner info">Videos come only from the official Tottenham Hotspur and Premier League YouTube channels and play in YouTube's own player. Each is linked to a match by its title and publication date. No clip boundaries or timestamps are claimed, and no video is described as showing a specific action, because the free data has no verified event-to-video timing. Match highlights are therefore marked <strong>contextual</strong> evidence for that match's statistics; anything else is <strong>illustrative</strong>.</div>
-  <div class="filters"><select class="ctl" id="v-kind" aria-label="Type"><option value="">All types</option>${Object.entries(kinds).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select><input class="ctl" id="v-q" placeholder="Filter by opponent or title" aria-label="Filter videos"><label class="small"><input type="checkbox" id="v-linked"> Linked to a match only</label></div>
+  const cats = ev?.categories || {};
+  const topics = [...new Set(items.flatMap((v) => v.topics || []))].sort();
+  const plist = [...new Map(items.flatMap((v) => v.players || []).map((p) => [p.id, p])).values()].sort((x, y) => x.name.localeCompare(y.name));
+  const matches = [...new Map(items.filter((v) => v.matchId).map((v) => [v.matchId, v])).values()].sort((x, y) => String(y.matchKickoff).localeCompare(String(x.matchKickoff)));
+  const latest = matches.find((m) => m.matchStats);
+  const latestVids = latest ? items.filter((v) => v.matchId === latest.matchId) : [];
+  const count = (c) => items.filter((v) => v.category === c).length;
+  return `<div class="section-head"><h1>Video Evidence Room</h1><span class="muted small">${items.length} analysis video${items.length === 1 ? '' : 's'} on how Spurs play</span></div>
+  <p class="lede">Tactical breakdowns, statistical deep-dives and match reviews of Tottenham, gathered from broadcasters, tactical analysts and Spurs review shows. Match highlights, interviews, training clips and promos are left out; highlights are on each match page.</p>
+  ${latest ? `<section class="panel section feature"><div class="section-head"><h2>Latest match under review: ${esc(latest.opponent)}</h2><a class="small" href="#/breakdown/${encodeURIComponent(latest.matchId)}">Full breakdown →</a></div>
+    ${statStrip(latest.matchStats)}${latest.matchStats.verdict ? `<p class="small muted">What the data says: ${esc(latest.matchStats.verdict)}</p>` : ''}
+    <div class="grid three">${latestVids.slice(0, 3).map(videoCard).join('')}</div></section>` : ''}
+  <div class="tabs" role="group" aria-label="Video type" id="v-cat"><button data-cat="" aria-pressed="true">All</button>${Object.entries(cats).filter(([k]) => count(k)).map(([k, l]) => `<button data-cat="${k}" aria-pressed="false">${esc(l)} <span class="faint">${count(k)}</span></button>`).join('')}</div>
+  <div class="filters" style="margin-top:12px">
+    <select class="ctl" id="v-topic" aria-label="Topic"><option value="">All topics</option>${topics.map((t) => `<option>${esc(t)}</option>`).join('')}</select>
+    <select class="ctl" id="v-player" aria-label="Player"><option value="">All players</option>${plist.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select>
+    <select class="ctl" id="v-match" aria-label="Match"><option value="">All matches</option>${matches.map((m) => `<option value="${esc(m.matchId)}">${esc(m.opponent)} · ${esc(fmtDate(m.matchKickoff, { day: 'numeric', month: 'short' }))}</option>`).join('')}</select>
+    <input class="ctl" id="v-q" placeholder="Search titles" aria-label="Search videos"></div>
   <div class="grid three" id="v-grid"></div>
-  <p class="source">Feed retrieval: ${esc(fmtDateTime(state.meta.dataUpdatedAt.video))}. YouTube's public feeds list each channel's latest uploads, so the library grows from when this site started collecting.</p>`;
+  <details class="panel section"><summary><strong>How videos are chosen</strong></summary>
+    <p class="small">Every couple of hours (every 30 minutes on match days) the site reads the public feeds of: the official Tottenham Hotspur and Premier League channels; Sky Sports Premier League and The Overlap (broadcaster analysis, including Monday Night Football); The Athletic FC, Coaches' Voice and HITC Sevens (tactical analysts); and Last Word On Spurs (a Spurs match-review show). A video is kept only if it is about Spurs <em>and</em> its title or description shows it is analysis (review, tactics, stats, a player's role and so on).</p>
+    <p class="small">It is linked to a match only when it names the opponent and came out in that match's window. The match's real numbers sit beside it so you can check the video's argument against the data. The site sorts videos by their title and description; it has not watched the footage, so it never claims a clip shows a particular action, and it adds no timestamps. Videos play in YouTube's own player.</p></details>
+  <p class="source">Feeds last read: ${esc(fmtDateTime(state.meta.dataUpdatedAt.video))}. YouTube's public feeds only list each channel's latest uploads, so the library has been building up since collection started.</p>`;
 };
 AFTER.video = async () => {
   const ev = await loadSeason('evidence.json', state.season, { optional: true });
   const items = ev ? ev.items : [];
+  let cat = '';
+  const featured = new Set((() => { const m = items.filter((v) => v.matchId && v.matchStats).sort((x, y) => String(y.matchKickoff).localeCompare(String(x.matchKickoff)))[0]; return m ? items.filter((v) => v.matchId === m.matchId).slice(0, 3).map((v) => v.videoId) : []; })());
   const draw = () => {
-    const k = document.getElementById('v-kind').value; const q = norm(document.getElementById('v-q').value); const linked = document.getElementById('v-linked').checked;
-    const list = items.filter((v) => (!k || v.kind === k) && (!q || norm(`${v.title} ${v.opponent || ''}`).includes(q)) && (!linked || v.matchId));
-    document.getElementById('v-grid').innerHTML = list.map((v) => `<div class="panel video-card"><button class="thumb" data-vid="${esc(v.videoId)}" aria-label="Play ${esc(v.title)}"><img loading="lazy" alt="" src="${esc(v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`)}"></button>
-      <strong>${esc(v.title)}</strong><span class="small muted">${esc(v.channel)} · ${esc(fmtDate(v.published, { day: 'numeric', month: 'short', year: 'numeric' }))}</span>
-      <span class="small">${v.matchId ? `Match: <a href="#/match/${encodeURIComponent(v.matchId)}">${esc(v.opponent)} (${esc(v.competition)})</a>` : '<span class="faint">Not linked to a match</span>'}</span>
-      <span class="small"><span class="badge ${v.relation === 'contextual' ? 'partial' : 'no'}">${v.relation === 'contextual' ? 'Contextual' : 'Illustrative'}</span> <span class="faint">${esc(v.matchConfidence)}</span></span>
-      <a class="small" href="${esc(v.url)}" target="_blank" rel="noopener">Open on YouTube</a></div>`).join('') || '<div class="empty">No videos match. The library fills automatically as the official channels publish.</div>';
+    const t = document.getElementById('v-topic').value; const pl = document.getElementById('v-player').value; const mt = document.getElementById('v-match').value; const q = norm(document.getElementById('v-q').value);
+    const list = items.filter((v) => (!cat || v.category === cat) && (!t || (v.topics || []).includes(t)) && (!pl || (v.players || []).some((p) => p.id === pl)) && (!mt || v.matchId === mt) && (!q || norm(`${v.title} ${v.opponent || ''} ${v.channel}`).includes(q)) && (cat || t || pl || mt || q || !featured.has(v.videoId)));
+    document.getElementById('v-grid').innerHTML = list.map(videoCard).join('') || `<div class="empty">${items.length ? 'No analysis videos match these filters.' : 'No Spurs analysis videos have been published on the watched channels since collection began. They usually appear within a day of each match, and this page fills automatically.'}</div>`;
   };
-  document.getElementById('v-grid').addEventListener('click', (e) => { const b = e.target.closest('[data-vid]'); if (b) b.outerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(b.dataset.vid)}?autoplay=1" title="Video" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`; });
-  ['v-kind', 'v-q', 'v-linked'].forEach((id) => document.getElementById(id).addEventListener('input', draw));
+  if (!view.dataset.vidBound) {
+    view.dataset.vidBound = '1';
+    view.addEventListener('click', (e) => { const b = e.target.closest('[data-vid]'); if (b && b.isConnected) b.outerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(b.dataset.vid)}?autoplay=1" title="Video" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`; });
+  }
+  document.getElementById('v-cat').addEventListener('click', (e) => { const b = e.target.closest('[data-cat]'); if (!b) return; cat = b.dataset.cat; document.querySelectorAll('#v-cat button').forEach((x) => x.setAttribute('aria-pressed', x === b)); draw(); });
+  ['v-topic', 'v-player', 'v-match', 'v-q'].forEach((id) => document.getElementById(id).addEventListener('input', draw));
   draw();
 };
 
@@ -584,7 +621,7 @@ VIEWS.match = async (id) => {
   <div class="panel section" ${f.score || m.lineup.length ? '' : 'hidden'}><div class="section-head"><h2>Spurs players</h2>${m.lineup.length ? `<div class="tabs" role="group" aria-label="Statistic group">${Object.keys(MATCH_TABS).map((t, i) => `<button data-mtab="${t}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>` : ''}</div>
     <div id="m-lineup">${m.lineup.length ? lineupTable(m.lineup, 'Attacking') : '<p class="na">Player statistics are not available for this match yet.</p>'}</div>
     ${m.statsComplete === false && f.status !== 'SCHEDULED' ? '<p class="small" style="color:var(--warn)">Statistics may still be incomplete; the site re-checks automatically after each match.</p>' : ''}</div>
-  ${m.videos?.length ? `<div class="panel section"><h2>Official video</h2><div class="grid three">${m.videos.map((v) => `<div class="video-card"><a href="${esc(v.url)}" target="_blank" rel="noopener"><img loading="lazy" alt="" src="${esc(v.thumbnail || '')}" style="width:100%;border-radius:8px"></a><span class="small">${esc(v.title)}</span><span class="badge ${v.relation === 'contextual' ? 'partial' : 'no'}">${v.relation === 'contextual' ? 'Contextual' : 'Illustrative'}</span></div>`).join('')}</div></div>` : ''}
+  ${m.videos?.length ? `<div class="panel section"><h2>Video</h2><div class="grid three">${m.videos.map((v) => `<div class="video-card"><a href="${esc(v.url)}" target="_blank" rel="noopener"><img loading="lazy" alt="" src="${esc(v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`)}" style="width:100%;border-radius:8px"></a><span class="vcat c-${esc(v.category || 'highlights')}">${esc(v.categoryLabel || 'Video')}</span><span class="small">${esc(v.title)}</span><span class="small faint">${esc(v.channel)}</span></div>`).join('')}</div><p class="source">Linked by opponent name and publication date. <a href="#/video">More Spurs analysis in the Video Evidence Room →</a></p></div>` : ''}
   <p class="source">Sources: ${esc(m.source)}${d ? '; FPL Core Insights (FotMob match data)' : ''}. Built ${esc(fmtDateTime(m.generatedAt))} Bahrain.</p>`;
 };
 const MATCH_TABS = {
@@ -806,7 +843,7 @@ VIEWS.sources = async () => {
       <div class="statrow"><span>Player match statistics</span><span class="small">every 6 h; every 30 min after a match until complete</span></div>
       <div class="statrow"><span>Shots, passing, possession, cup matches</span><span class="small">every 3 h; every 30 min after a match</span></div>
       <div class="statrow"><span>Cup & European fixtures (cross-check)</span><span class="small">every 6 h; hourly on match days</span></div>
-      <div class="statrow"><span>Official videos</span><span class="small">every 2 h; every 30 min on match days</span></div></div>
+      <div class="statrow"><span>Analysis & official videos</span><span class="small">every 2 h; every 30 min on match days</span></div></div>
       <p class="source">Runs on GitHub Actions on a 20-minute schedule (GitHub may delay scheduled runs by a few minutes at busy times).</p></div>
     <div class="panel"><h2>Costs</h2><div class="statlist" style="grid-template-columns:1fr">
       <div class="statrow"><span>Hosting (GitHub Pages)</span><span class="v">$0</span></div><div class="statrow"><span>Scheduled jobs (GitHub Actions, public repository)</span><span class="v">$0</span></div>

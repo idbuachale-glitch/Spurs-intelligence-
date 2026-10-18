@@ -2,12 +2,15 @@
 // Used identically by the live sync and by the historical backfill.
 import { STATS, POS, normalizePos, playerMatch, aggregate, resultOf, leagueTable, round, ageOn } from './stats.js';
 import { num } from '../lib/validate.js';
+import { PROVIDERS } from '../config.js';
 import { matchBreakdown } from './breakdown.js';
+import { analysisVideos, CATEGORY_LABELS, TIER_LABELS } from './videos.js';
 import { clubProfiles, scoutReport } from './opposition.js';
 import { recordedColumns, playerRow as fcPlayerRow, teamSide, shotRow, tournamentLabel, opponentFromSlug } from '../adapters/fplcore.js';
 
 const TEAM_ALIASES = {
   'man utd': ['manchester united', 'man utd', 'man united'],
+  'milton keynes dons': ['milton keynes', 'mk dons'],
   'man city': ['manchester city', 'man city'],
   "nott'm forest": ['nottingham forest', "nott'm forest", 'forest'],
   wolves: ['wolverhampton', 'wolves'],
@@ -310,15 +313,17 @@ export function buildSeason(input) {
   teamSummary.shotZones = shotZones(Object.values(matchFiles).filter((m) => m.fixture.competition === 'Premier League' && m.detail).flatMap((m) => m.detail.shots));
 
   // ---- Video evidence linking ----
-  const evidence = linkVideos(videos, fixtures);
-  for (const ev of evidence) if (ev.matchId && matchFiles[`matches/${ev.matchId}.json`]) matchFiles[`matches/${ev.matchId}.json`].videos.push(ev);
+  const { items: evidence, highlights } = analysisVideos({ videos, fixtures, players, matchFiles, channels: PROVIDERS.youtube.channels });
+  for (const ev of [...highlights.map((h) => ({ ...h, category: 'highlights', categoryLabel: 'Highlights' })), ...evidence]) {
+    if (ev.matchId && matchFiles[`matches/${ev.matchId}.json`]) matchFiles[`matches/${ev.matchId}.json`].videos.push(ev);
+  }
 
   const files = {
     'fixtures.json': { season, generatedAt, timezone: 'UTC (displayed in Asia/Bahrain)', fixtures },
     'table.json': { season, generatedAt, source: `Computed from ${sourceRef} results`, rows: table, spurs: spursRow },
     'players.json': { season, generatedAt, source: sourceRef, competition: 'Premier League (season); all competitive matches (seasonAll)', players: players.map(({ season: s, seasonAll: a, seasonCups: c, ...rest }) => ({ ...rest, season: slim(s), seasonAll: slim(a), seasonCups: c ? slim(c) : null })) },
     'team.json': { season, generatedAt, source: sourceRef, competition: 'Premier League', ...teamSummary },
-    'evidence.json': { season, generatedAt, items: evidence },
+    'evidence.json': { season, generatedAt, items: evidence, categories: CATEGORY_LABELS, tiers: TIER_LABELS, channels: PROVIDERS.youtube.channels.map((c) => ({ key: c.key, handle: c.handle, tier: c.tier })) },
     ...playerFiles,
     ...matchFiles,
   };
@@ -531,31 +536,3 @@ function advancedBlock(rows) {
   return { n: rows.length, perMatch, halves: halfN ? { ...halves, n: halfN } : null, situations, source: 'FPL Core Insights (FotMob match data)' };
 }
 
-export function linkVideos(videos, fixtures) {
-  const items = [];
-  const played = fixtures.filter((f) => f.kickoff && (f.status === 'FT' || f.status === 'FT_PROVISIONAL' || f.status === 'LIVE'));
-  for (const v of videos) {
-    const t = `${v.title}`.toLowerCase();
-    const pub = Date.parse(v.published);
-    const spursRelated = v.channel === 'spurs' || /tottenham|spurs/.test(t);
-    if (!spursRelated) continue;
-    const match = played.find((f) => {
-      const k = Date.parse(f.kickoff);
-      return pub >= k - 6 * 3600e3 && pub <= k + 5 * 86400e3 && teamAliases(f.opponent).some((a) => t.includes(a));
-    });
-    const kind = /highlight/.test(t) ? 'highlights' : /press conference|presser/.test(t) ? 'press' : /reaction|interview|speaks|reacts/.test(t) ? 'interview'
-      : /goal|every|all the/.test(t) ? 'goals' : /preview/.test(t) ? 'preview' : 'other';
-    items.push({
-      videoId: v.videoId, title: v.title, url: v.url || `https://www.youtube.com/watch?v=${v.videoId}`, published: v.published,
-      channel: v.channelName || v.channel, thumbnail: v.thumbnail, kind,
-      matchId: match ? match.id : null,
-      opponent: match ? match.opponent : null,
-      competition: match ? match.competition : null,
-      // Linking is by title + publication date only; we never claim a clip shows a
-      // specific event, and no timestamps are inferred.
-      relation: match ? (kind === 'highlights' || kind === 'goals' ? 'contextual' : 'illustrative') : 'illustrative',
-      matchConfidence: match ? 'title + date match' : 'not linked to a match',
-    });
-  }
-  return items.sort((a, b) => String(b.published).localeCompare(String(a.published)));
-}

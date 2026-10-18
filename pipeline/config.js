@@ -50,11 +50,20 @@ export const PROVIDERS = {
   youtube: {
     base: process.env.YT_BASE || 'https://www.youtube.com',
     channels: [
-      // Official, authorised channels only. IDs are resolved from the handle at run
-      // time; the fallback ID is used only if the handle page cannot be read, and the
-      // feed's channel name is always checked before any video is accepted.
-      { key: 'spurs', handle: '@SpursOfficial', fallbackId: 'UCEg25rdRZXg32iwai6N6l0w', expectName: 'tottenham' },
-      { key: 'premierleague', handle: '@premierleague', fallbackId: 'UCG5qGWdu8nIRZqJ_GgDwQ-w', expectName: 'premier league' },
+      // IDs are resolved from the handle at run time; the fallback ID is used only if
+      // the handle page cannot be read, and the feed's channel name is always checked
+      // before any video is accepted. Only metadata and links are stored; videos play
+      // in YouTube's own embed player (the channel owner's chosen distribution).
+      // tier: what kind of source it is. optional: a failure there never raises an
+      // alert (it only affects how much analysis the Video Evidence Room has).
+      { key: 'spurs', handle: '@SpursOfficial', fallbackId: 'UCEg25rdRZXg32iwai6N6l0w', expectName: 'tottenham', tier: 'official', spursOnly: true },
+      { key: 'premierleague', handle: '@premierleague', fallbackId: 'UCG5qGWdu8nIRZqJ_GgDwQ-w', expectName: 'premier league', tier: 'official' },
+      { key: 'skysportspl', handle: '@SkySportsPremierLeague', fallbackId: null, expectName: 'sky sports', tier: 'broadcaster', optional: true },
+      { key: 'athleticfc', handle: '@TheAthleticFC', fallbackId: 'UC6ZMmQaL9wZYo4iLw8n8xiA', expectName: 'athletic', tier: 'tactical', optional: true },
+      { key: 'coachesvoice', handle: '@TheCoachesVoice', fallbackId: 'UCuR-ZdVJtF3muYhYUQ-he-Q', expectName: 'coaches', tier: 'tactical', optional: true },
+      { key: 'hitcsevens', handle: '@HITCSevens', fallbackId: 'UCi9SqUCnW_flgsrl6_PRJFQ', expectName: 'hitc', tier: 'tactical', optional: true },
+      { key: 'overlap', handle: '@TheOverlap', fallbackId: 'UCjXIw1GlwaY1IzpW_jN9iCQ', expectName: 'overlap', tier: 'broadcaster', optional: true },
+      { key: 'lastwordonspurs', handle: '@LastWordOnSpurs', fallbackId: 'UCbqK092y4W290g_C3tuKEbg', expectName: 'last word', tier: 'spurs-review', optional: true, spursOnly: true },
     ],
   },
 };

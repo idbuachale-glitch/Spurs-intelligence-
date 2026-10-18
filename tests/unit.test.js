@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { aggregate, per90, leagueTable, playerMatch } from '../pipeline/derive/stats.js';
-import { blankUnrecordedStats, fplFixtureStatus, linkVideos } from '../pipeline/derive/build.js';
+import { blankUnrecordedStats, fplFixtureStatus } from '../pipeline/derive/build.js';
+import { analysisVideos } from '../pipeline/derive/videos.js';
 import { recordedColumns, playerRow, opponentFromSlug, parseCsv } from '../pipeline/adapters/fplcore.js';
 import { parseFeed } from '../pipeline/adapters/youtube.js';
 import { normalizeEvent } from '../pipeline/adapters/thesportsdb.js';
@@ -82,12 +83,35 @@ test('provider adapters parse real-shaped payloads', () => {
   assert.deepEqual(parseCsv('a,b\n1,"x,y"\n'), [{ a: '1', b: 'x,y' }]);
   const feed = parseFeed(`<feed><title>Tottenham Hotspur</title><author><name>Tottenham Hotspur</name></author><entry><yt:videoId>abcdefghijk</yt:videoId><title>HIGHLIGHTS | Spurs 2-1 Coventry City</title><published>2026-10-20T10:00:00+00:00</published><link rel="alternate" href="https://www.youtube.com/watch?v=abcdefghijk"/></entry></feed>`);
   assert.equal(feed.author, 'Tottenham Hotspur'); assert.equal(feed.entries[0].videoId, 'abcdefghijk');
-  const ev = linkVideos([{ ...feed.entries[0], channel: 'spurs' }], [{ id: 'pl-1', kickoff: '2026-10-19T19:00:00Z', status: 'FT', opponent: 'Coventry City', competition: 'Premier League' }]);
-  assert.equal(ev[0].matchId, 'pl-1'); assert.equal(ev[0].relation, 'contextual');
   const tsdb = normalizeEvent({ idEvent: '9', idHomeTeam: '133616', idAwayTeam: '1', strHomeTeam: 'Tottenham', strAwayTeam: 'Charlton', intHomeScore: '5', intAwayScore: '1', strStatus: 'FT', strLeague: 'EFL Cup', strTimestamp: '2026-08-26T18:45:00' }, '133616');
   assert.deepEqual(tsdb.score, { spurs: 5, opp: 1 }); assert.equal(tsdb.status, 'FT');
   assert.equal(seasonFromEvents([{ deadline_time: '2026-08-21T17:30:00Z' }]), '2026-27');
   assert.equal(resolveTeamId([{ id: 19, name: 'Spurs', short_name: 'TOT' }, { id: 1, name: 'Arsenal', short_name: 'ARS' }], ['spurs', 'tot']), 19);
+});
+
+test('video room keeps only Spurs analysis; highlights go to the match page', () => {
+  const fx = [{ id: 'pl-1', kickoff: '2026-10-19T19:00:00Z', status: 'FT', opponent: 'Coventry City', competition: 'Premier League' }];
+  const channels = [{ key: 'spurs', tier: 'official', spursOnly: true }, { key: 'sky', tier: 'broadcaster' }, { key: 'athletic', tier: 'tactical' }, { key: 'lwos', tier: 'spurs-review', spursOnly: true }];
+  const players = [{ id: 'p1', web: 'Solanke', aliases: ['Dominic', 'Solanke'], current: true }];
+  const v = (id, channel, title, published = '2026-10-20T10:00:00Z', description = '') => ({ videoId: id.padEnd(11, 'x'), channel, title, published, description });
+  const videos = [
+    v('a', 'spurs', 'HIGHLIGHTS | Spurs 2-1 Coventry City'),
+    v('b', 'spurs', 'Behind the scenes at Spurs training!'),
+    v('c', 'spurs', 'Getting set for Coventry 🏋️', '2026-10-18T10:00:00Z'),
+    v('d', 'sky', 'Carragher analyses how De Zerbi\'s Spurs beat the Coventry press', '2026-10-20T21:00:00Z'),
+    v('e', 'sky', 'Arsenal 3-0 Chelsea | Highlights'),
+    v('f', 'athletic', 'Why Solanke is perfect for De Zerbi\'s Tottenham', '2026-10-01T10:00:00Z'),
+    v('g', 'lwos', 'Spurs 2-1 Coventry | Post Match Analysis', '2026-10-19T22:30:00Z'),
+    v('h', 'athletic', 'Tottenham by the numbers: xG, field tilt and the 3-2-5', '2026-10-05T10:00:00Z'),
+    v('i', 'sky', 'Spurs fans react #shorts'),
+  ];
+  const { items, highlights } = analysisVideos({ videos, fixtures: fx, players, channels });
+  const byId = Object.fromEntries(items.map((i) => [i.videoId[0], i]));
+  assert.deepEqual(Object.keys(byId).sort(), ['d', 'f', 'g', 'h']);
+  assert.equal(highlights.length, 1); assert.equal(highlights[0].matchId, 'pl-1');
+  assert.equal(byId.d.matchId, 'pl-1'); assert.equal(byId.d.category, 'review'); assert.ok(byId.d.topics.includes('Pressing & counter-press'));
+  assert.equal(byId.f.category, 'player'); assert.deepEqual(byId.f.players.map((p) => p.id), ['p1']); assert.equal(byId.f.matchId, null);
+  assert.equal(byId.g.category, 'review'); assert.equal(byId.h.category, 'stats');
 });
 
 test('credentials never appear in logs or the public site', () => {

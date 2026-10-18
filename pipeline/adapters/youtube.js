@@ -6,7 +6,7 @@ import { request } from '../lib/http.js';
 
 const cfg = PROVIDERS.youtube;
 export const id = 'youtube';
-export const label = 'YouTube RSS — official Tottenham Hotspur & Premier League channels';
+export const label = 'YouTube RSS — official club/league channels plus established analysis channels';
 
 export async function resolveChannelId(channel) {
   try {
@@ -22,7 +22,9 @@ export async function resolveChannelId(channel) {
 export async function fetchChannel(channel) {
   const resolved = await resolveChannelId(channel);
   let lastErr = null;
-  for (const channelId of [...new Set([resolved, channel.fallbackId])]) {
+  const ids = [...new Set([resolved, channel.fallbackId])].filter(Boolean);
+  if (!ids.length) throw new Error(`YouTube: could not resolve ${channel.handle}`);
+  for (const channelId of ids) {
     try {
       const { body } = await request(`${cfg.base}/feeds/videos.xml?channel_id=${channelId}`, { as: 'text' });
       const feed = parseFeed(body);
