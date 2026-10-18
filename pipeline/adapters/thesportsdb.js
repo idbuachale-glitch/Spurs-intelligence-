@@ -64,3 +64,15 @@ export function normalizeEvent(e, teamId) {
     club: CLUB.name,
   };
 }
+
+// Club badge by name (for opponents outside the Premier League). Returns a URL or null.
+export async function findBadge(name) {
+  const q = String(name).replace(/\s+/g, '_');
+  const r = await get(`searchteams.php?t=${encodeURIComponent(q)}`).catch(() => null);
+  const teams = ((r && r.teams) || []).filter((t) => (!t.strSport || t.strSport === 'Soccer') && !/women|u21|u23|u19|u18|ladies|academy|futsal/i.test(t.strTeam) && t.strGender !== 'Female');
+  const norm = (s) => String(s || '').toLowerCase().replace(/\b(fc|afc|cf|sc|ac)\b/g, '').replace(/[^a-z0-9]/g, '');
+  const want = norm(name);
+  const hit = teams.find((t) => norm(t.strTeam) === want) || teams.find((t) => norm(t.strTeam).includes(want) || want.includes(norm(t.strTeam))) || teams[0];
+  const url = hit && (hit.strBadge || hit.strTeamBadge);
+  return url ? `${url}/small` : null;
+}

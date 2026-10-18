@@ -368,6 +368,23 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     ok('simulator', 'Season simulator', { records: { remainingFixtures: sim.remainingFixtures } });
   } catch (err) { fail('simulator', 'Season simulator', err); }
 
+  // ---------------- Badges for opponents outside the Premier League ----------------
+  const badgeFile = S('badges.json');
+  const badges = readJson(badgeFile, { names: {} });
+  try {
+    const plNames = new Set(teams.flatMap((t) => [t.name, t.short]).map((x) => x.toLowerCase()));
+    const want = [...new Set(built.fixtures.filter((f) => !f.opponentTeamId && f.opponent).map((f) => f.opponent))].filter((n) => !plNames.has(n.toLowerCase()));
+    let looked = 0;
+    for (const n of want) {
+      const b = badges.names[n];
+      if (b && (b.url || now - new Date(b.at) < 7 * 86400e3)) continue; // misses retried weekly
+      if (looked >= 15) break; // keep each run light
+      looked++;
+      badges.names[n] = { url: await tsdb.findBadge(n).catch(() => null), at: nowIso };
+    }
+    if (looked) writeJson(badgeFile, badges);
+  } catch (err) { log.error('badge lookup failed', { error: String(err.message || err) }); }
+
   // ---------------- Live match feed (only while a Spurs match is in play) ----------------
   attachStoredLive(built, stateDir);
   if (af.enabled()) health('api-football', af.label).optional = true; else status.sources['api-football'] = { label: af.label, disabled: true, note: 'Optional. Add a free API_FOOTBALL_KEY secret for live shots, fouls, cards and corners during Spurs matches.' };
@@ -403,7 +420,8 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     dataUpdatedAt: { fixtures: fixtures.retrievedAt, playerStats: maxRetrieved(histDir), matchDetail: maxRetrieved(fcDir), cups: cups.retrievedAt || null, video: status.sources['youtube-spurs']?.lastSuccess || null },
     nextMatchId: next ? next.id : null, lastMatchId: last ? last.id : null,
     statDefs: STATS.map(({ field, ...s }) => ({ ...s, sourceField: field || null })), rateDefs: RATES, supplementaryEnabled: fc.enabled(), unavailable: UNAVAILABLE, nowAvailable: NOW_AVAILABLE, posLabels: POS_LABEL,
-    teamCodes: Object.fromEntries(teams.map((t) => [t.id, t.code])), teamShort: Object.fromEntries(teams.map((t) => [t.id, t.short])),
+    teamCodes: Object.fromEntries(teams.map((t) => [t.id, t.code])), teamShort: Object.fromEntries(teams.map((t) => [t.id, t.short])), teamNames: Object.fromEntries(teams.map((t) => [t.id, t.name])),
+    extraBadges: Object.fromEntries(Object.entries(readJson(S('badges.json'), { names: {} }).names).filter(([, v]) => v.url).map(([k, v]) => [k, v.url])),
   });
   status.lastRun = nowIso;
   status.runFilesChanged = changed;
