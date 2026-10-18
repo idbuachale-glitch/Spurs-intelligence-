@@ -233,7 +233,7 @@ const LAB_GROUPS = {
   Attacking: [['goals', 'Goals', 0], ['assists', 'Assists', 0], ['xg', 'xG', 2], ['xa', 'xA', 2], ['shots', 'Shots', 0], ['chancesCreated', 'Chances', 0]],
   Dribbling: [['dribbles', 'Take-ons won', 0], ['takeOnPct', 'Take-on %', 1, 'rate'], ['touchesBox', 'Box touches', 0], ['wasFouled', 'Fouled', 0], ['dispossessed', 'Dispossessed', 0], ['dribbledPast', 'Dribbled past', 0]],
   Passing: [['passesAcc', 'Acc. passes', 0], ['passPct', 'Pass %', 1, 'rate'], ['finalThirdPasses', 'Final third', 0], ['crossesAcc', 'Crosses', 0], ['longBallsAcc', 'Long balls', 0], ['touches', 'Touches', 0]],
-  Defending: [['tacklesWon', 'Tackles won', 0], ['tackleWinPct', 'Tackle %', 1, 'rate'], ['interceptions', 'Intercep.', 0], ['recoveries', 'Recov.', 0], ['cbi', 'CBI', 0], ['duelsWon', 'Duels won', 0]],
+  Defending: [['tacklesWon', 'Tackles won', 0], ['foulsCommitted', 'Fouls', 0], ['interceptions', 'Intercep.', 0], ['recoveries', 'Recov.', 0], ['cbi', 'CBI', 0], ['duelsWon', 'Duels won', 0]],
   Fouls: [['foulsCommitted', 'Fouls', 0], ['wasFouled', 'Fouled', 0], ['yc', 'Yellow', 0], ['rc', 'Red', 0], ['offsides', 'Offsides', 0]],
   Goalkeeping: [['saves', 'Saves', 0], ['cs', 'Clean sheets', 0], ['gc', 'Conceded', 0], ['xgotFaced', 'xGOT faced', 2], ['goalsPrevented', 'Goals prev.', 2], ['gkPassesAcc', 'Acc. passes', 0]],
 };
