@@ -18,6 +18,8 @@ import { fotmobPool, strengthsProfile, proxyPanel } from './derive/profile.js';
 import { setMinMinutes, minMinutes, leaguePool, leagueTeamRanks, insights, tactical, squadPlanner, positionRanks, playerPercentiles, scoutingSummary, article, coachFor } from './derive/analysis.js';
 import { STATS, RATES, UNAVAILABLE, NOW_AVAILABLE, POS_LABEL } from './derive/stats.js';
 import { leaders, roundContext } from './derive/leaguecontext.js';
+import { runLive, attachStoredLive } from './derive/live.js';
+import * as af from './adapters/apifootball.js';
 import { ratings, expectedGoals, matchProbabilities, simulateSeason } from './derive/simulate.js';
 
 const ELEMENT_FIELDS = ['id', 'code', 'first_name', 'second_name', 'web_name', 'known_name', 'team', 'element_type', 'birth_date', 'region', 'squad_number', 'team_join_date',
@@ -365,6 +367,15 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     };
     ok('simulator', 'Season simulator', { records: { remainingFixtures: sim.remainingFixtures } });
   } catch (err) { fail('simulator', 'Season simulator', err); }
+
+  // ---------------- Live match feed (only while a Spurs match is in play) ----------------
+  attachStoredLive(built, stateDir);
+  if (af.enabled()) health('api-football', af.label).optional = true; else status.sources['api-football'] = { label: af.label, disabled: true, note: 'Optional. Add a free API_FOOTBALL_KEY secret for live shots, fouls, cards and corners during Spurs matches.' };
+  try {
+    const liveRes = await runLive({ built, stateDir, now, spursElementIds: seen, elementsById,
+      health: { ok: (d) => ok('api-football', af.label, d), fail: (e) => fail('api-football', af.label, e) } });
+    if (liveRes.match) log.info('live window', { match: liveRes.match, notes: liveRes.notes });
+  } catch (err) { log.error('live feed failed', { error: String(err.message || err) }); }
 
   // ---------------- Write (with no-partial-overwrite protection) ----------------
   let changed = 0;

@@ -131,7 +131,7 @@ const spursCrest = (cls = '') => crestImg(6, cls);
 const fixtureRow = (f) => `<a class="fx" href="#/match/${encodeURIComponent(f.id)}">
   <div class="when">${esc(fmtDate(f.kickoff))}<br><span class="faint">${esc(fmtTime(f.kickoff))} Bahrain</span></div>
   <div><div class="who">${crest(f.opponentTeamId)}${f.home ? '' : '@ '}${esc(f.opponent)}${f.home ? ' (H)' : ''}</div><div class="comp">${esc(f.competition)}${f.gameweek ? ` · GW${f.gameweek}` : ''}${f.status !== 'FT' && f.status !== 'SCHEDULED' ? ` · ${esc(statusText[f.status] || f.status)}` : ''}${f.kickoffHistory?.length ? ' · rescheduled' : ''}${f.hasPreview ? ' · <span style="color:var(--cyan)">scouting report</span>' : ''}</div></div>
-  <div class="scorebox">${!f.score && f.difficulty ? `<span class="diff ${f.difficulty.level}" title="${{ easy: 'Easier game', medium: 'Tougher game', hard: 'Hard game' }[f.difficulty.level]}: Spurs win ${f.difficulty.win}% · draw ${f.difficulty.draw}% · lose ${f.difficulty.loss}%" aria-label="${{ easy: 'Easier', medium: 'Tougher', hard: 'Hard' }[f.difficulty.level]} game, Spurs win chance ${f.difficulty.win}%"></span><span class="diff-pct">${f.difficulty.win}%</span>` : ''}${f.score ? `${f.score.spurs}–${f.score.opp} ${resultChip(f.result, true)}` : `<span class="small muted" style="font-family:var(--body);font-weight:400">${f.status === 'POSTPONED' ? 'TBC' : ''}</span>`}</div></a>`;
+  <div class="scorebox">${!f.score && f.live?.score ? `${f.live.score.spurs}–${f.live.score.opp} <span class="live-pill">${f.live.minute ? `${f.live.minute}′` : 'LIVE'}</span>` : ''}${!f.score && !f.live?.score && f.difficulty ? `<span class="diff ${f.difficulty.level}" title="${{ easy: 'Easier game', medium: 'Tougher game', hard: 'Hard game' }[f.difficulty.level]}: Spurs win ${f.difficulty.win}% · draw ${f.difficulty.draw}% · lose ${f.difficulty.loss}%" aria-label="${{ easy: 'Easier', medium: 'Tougher', hard: 'Hard' }[f.difficulty.level]} game, Spurs win chance ${f.difficulty.win}%"></span><span class="diff-pct">${f.difficulty.win}%</span>` : ''}${f.score ? `${f.score.spurs}–${f.score.opp} ${resultChip(f.result, true)}` : `<span class="small muted" style="font-family:var(--body);font-weight:400">${f.status === 'POSTPONED' ? 'TBC' : ''}</span>`}</div></a>`;
 // Key for the difficulty dots on upcoming fixtures.
 const diffKey = (list) => (list.some((f) => f.difficulty && !f.score) ? `<p class="small muted diff-key"><span class="diff easy"></span>Easier <span class="diff medium"></span>Tougher <span class="diff hard"></span>Hard · % = Spurs' chance of winning. From the site's match model (expected points from xG ratings): a rough guide, not betting odds. Cup ties against non-Premier League clubs are not rated.</p>` : '');
 
@@ -753,6 +753,7 @@ VIEWS.match = async (id) => {
   return `<section class="hero"><div class="kicker">${esc(f.competition)}${f.gameweek ? `, gameweek ${f.gameweek}` : ''} · ${esc(statusText[f.status] || f.status)}${f.resultNote ? ` · ${esc(f.resultNote)}` : ''}</div>
     <div class="fixture-board"><div class="team">${f.home ? spursCrest('big') : crest(f.opponentTeamId, 'big')}${esc(L)}</div><div class="mid"><div class="clock">${sc}</div><div class="vs">${esc(fmtDate(f.kickoff, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}, ${esc(fmtTime(f.kickoff))} Bahrain</div></div><div class="team right">${f.home ? crest(f.opponentTeamId, 'big') : spursCrest('big')}${esc(R)}</div></div>
     <div class="hero-meta"><span>${f.home ? 'Home' : 'Away'}${f.venueName ? ` · ${esc(f.venueName)}` : ''}</span>${f.kickoffHistory?.length ? `<span>Rescheduled (was ${esc(fmtDateTime(f.kickoffHistory[f.kickoffHistory.length - 1].was))})</span>` : ''}${f.verification ? `<span>Score ${f.verification.agrees ? 'confirmed' : 'differs'} by ${esc(f.verification.source)}</span>` : ''}</div></section>
+  ${livePanel(m)}
   ${m.preview ? scoutHtml(m.preview, f) : ''}
   <div class="grid two section" ${f.score ? '' : 'hidden'}>
     <div class="panel"><h2>Key events</h2>
@@ -792,14 +793,48 @@ function lineupTable(lineup, tab) {
     ${rows.map((l) => `<tr><td class="sticky-col" data-v="${esc(l.name)}" data-label="Player"><a href="#/player/${l.playerId}">${esc(l.name)}</a> <span class="faint tiny">${esc(l.pos || '')}</span></td><td data-label="Role">${{ starter: 'Started', sub: 'Sub', unknown: '—' }[l.role]}</td>${cols.map(([k, lab, dp]) => `<td class="r" data-v="${l[k] ?? ''}" data-label="${esc(lab)}">${fmt(l[k], dp || 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 AFTER.match = async (id) => {
+  clearTimeout(window.__liveT);
   if (!id) return;
   const m = await loadSeason(`matches/${id}.json`, state.season, { optional: true });
+  // During a match, reload this page's data every minute (the site itself updates about every 5).
+  if (m && inLiveWindow(m.fixture)) {
+    const hash = location.hash;
+    window.__liveT = setTimeout(async () => {
+      if (location.hash !== hash) return;
+      try { await Promise.all([loadSeason(`matches/${id}.json`, state.season, { fresh: true, optional: true }), loadSeason('fixtures.json', state.season, { fresh: true })]); } catch { /* keep current view */ }
+      if (location.hash === hash) route();
+    }, 60000);
+  }
   if (!m || !m.lineup.length) return;
   document.querySelectorAll('[data-mtab]').forEach((b) => b.addEventListener('click', () => {
     document.querySelectorAll('[data-mtab]').forEach((x) => x.setAttribute('aria-pressed', x === b));
     const box = document.getElementById('m-lineup'); box.innerHTML = lineupTable(m.lineup, b.dataset.mtab); sortableTable(box.querySelector('table'));
   }));
 };
+
+const inLiveWindow = (f) => { if (!f?.kickoff || f.friendly) return false; const t = (Date.now() - Date.parse(f.kickoff)) / 60000; return t >= -5 && t <= 155; };
+// Live in-game statistics (API-Football) and per-player figures (FPL live).
+function livePanel(m) {
+  const lv = m.live; const f = m.fixture;
+  const windowOpen = inLiveWindow(f);
+  if (!lv && !windowOpen) return '';
+  if (!lv) return `<div class="banner info section">${state.status?.sources?.['api-football']?.disabled ? 'Live statistics appear here during the match once the free API-Football key is added.' : 'Live statistics will appear here a few minutes after kick-off. This page refreshes itself every minute.'}</div>`;
+  const st = lv.stats;
+  const min = lv.minute !== null && lv.minute !== undefined ? `${lv.minute}${lv.extra ? `+${lv.extra}` : ''}′` : '';
+  const head = `<div class="section-head"><h2>${lv.isLive ? '<span class="live-pill">LIVE</span> ' : ''}Match stats${min && lv.isLive ? ` · ${min}` : lv.isLive ? '' : ' (final live feed)'}</h2>${lv.score ? `<span class="big-score">${f.home ? `Spurs ${lv.score.spurs}–${lv.score.opp} ${esc(f.opponent)}` : `${esc(f.opponent)} ${lv.score.opp}–${lv.score.spurs} Spurs`}</span>` : ''}</div>`;
+  const bars = st ? pairBars([
+    { label: 'Shots', a: st.spurs.shots, b: st.opp.shots }, { label: 'On target', a: st.spurs.sot, b: st.opp.sot },
+    { label: 'Possession', a: st.spurs.possession, b: st.opp.possession, unit: '%' }, { label: 'Corners', a: st.spurs.corners, b: st.opp.corners },
+    { label: 'Fouls', a: st.spurs.fouls, b: st.opp.fouls }, { label: 'Yellow cards', a: st.spurs.yc, b: st.opp.yc }, { label: 'Red cards', a: st.spurs.rc, b: st.opp.rc },
+    ...(st.spurs.saves !== undefined ? [{ label: 'Saves', a: st.spurs.saves, b: st.opp.saves }] : []), ...(st.spurs.xg !== undefined && st.spurs.xg !== null ? [{ label: 'xG', a: st.spurs.xg, b: st.opp.xg, dp: 2 }] : []),
+  ], { right: f.opponent }) : `<p class="small muted">${lv.planBlocked ? 'Team statistics are not available on the free API-Football plan for this match.' : 'Team statistics are waiting for the first update from the provider.'}</p>`;
+  const evs = (lv.events || []).filter((e) => ['Goal', 'Card'].includes(e.type));
+  const evHtml = evs.length ? `<div class="statlist" style="margin-top:10px">${evs.map((e) => `<div class="statrow"><span>${e.type === 'Goal' ? '⚽' : /red/i.test(e.detail) ? '🟥' : '🟨'} <strong>${esc(e.player || 'Unknown')}</strong> <span class="muted small">${e.team === 'spurs' ? 'Spurs' : esc(f.opponent)}${e.type === 'Goal' && e.detail && e.detail !== 'Normal Goal' ? ` · ${esc(e.detail)}` : ''}</span></span><span class="v">${e.minute ?? ''}${e.extra ? `+${e.extra}` : ''}′</span></div>`).join('')}</div>` : '';
+  const pl = lv.players || [];
+  const plHtml = pl.length ? `<div class="table-wrap" style="margin-top:12px"><table class="live-pl"><thead><tr><th>Spurs player</th><th class="r">Min</th><th class="r">G</th><th class="r">A</th><th class="r">Tkl</th><th class="r">CBI</th><th class="r">Rec</th><th></th></tr></thead><tbody>${pl.map((p) => `<tr><td>${esc(p.name)}</td><td class="r">${p.minutes}</td><td class="r">${p.goals || ''}</td><td class="r">${p.assists || ''}</td><td class="r">${fmt(p.tackles)}</td><td class="r">${fmt(p.cbi)}</td><td class="r">${fmt(p.recoveries)}</td><td>${p.yc ? '🟨' : ''}${p.rc ? '🟥' : ''}</td></tr>`).join('')}</tbody></table></div><p class="tiny faint" style="margin:4px 0 0">G goals · A assists · Tkl tackles · CBI clearances, blocks &amp; interceptions · Rec recoveries.</p>` : '';
+  return `<section class="panel section live-panel">${head}${bars}${evHtml}${plHtml}
+    <p class="source">${st ? `Team stats: ${esc(lv.source.stats)}` : ''}${st && pl.length ? '; ' : ''}${pl.length ? `players: ${esc(lv.source.players)}` : ''}. Last update ${esc(fmtTime(lv.retrievedAt || lv.playersAt))} Bahrain${lv.isLive ? ' · the site updates about every 5 minutes during the match and this page reloads itself every minute' : ''}.</p></section>`;
+}
 
 function forecastHtml(fc) {
   const bar = `<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin:10px 0 6px"><div style="width:${fc.win}%;background:var(--win)"></div><div style="width:${fc.draw}%;background:var(--draw)"></div><div style="width:${fc.loss}%;background:var(--loss)"></div></div>`;

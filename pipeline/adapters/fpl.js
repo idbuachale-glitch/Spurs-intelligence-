@@ -46,3 +46,10 @@ export function seasonFromEvents(events) {
   const start = new Date(first).getUTCMonth() >= 5 ? y : y - 1;
   return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
 }
+
+// Live per-player figures for a gameweek, updated by the Premier League during matches.
+export async function fetchLive(gw) {
+  const r = await get(`/event/${gw}/live/`, { retries: 1 });
+  if (!r || !Array.isArray(r.elements)) throw new Error('fpl live: unexpected payload');
+  return r.elements;
+}
