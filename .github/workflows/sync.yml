@@ -95,7 +95,14 @@ jobs:
           for i in 1 2 3; do git pull -q --rebase -X ours && git push -q && break; sleep 5; done
 
       - name: Prepare site
-        run: cp -r site _site && touch _site/.nojekyll
+        # Version every code file with the commit, so phones load a new release
+        # immediately instead of a cached copy of the previous one.
+        run: |
+          cp -r site _site && touch _site/.nojekyll
+          v="${GITHUB_SHA::8}"
+          sed -i -E "s#(href=\"styles\.css)\"#\1?v=$v\"#; s#(src=\"app\.js)\"#\1?v=$v\"#" _site/index.html
+          sed -i -E "s#from '\./([a-z]+\.js)'#from './\1?v=$v'#g" _site/*.js
+          grep -q "app.js?v=$v" _site/index.html
 
       - uses: actions/configure-pages@v5
         with:
