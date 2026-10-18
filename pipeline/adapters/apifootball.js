@@ -89,3 +89,11 @@ export async function accountStatus() {
   if (!r || Array.isArray(r)) throw new Error('API-Football: key not accepted');
   return { plan: r.subscription?.plan || null, active: r.subscription?.active ?? null, usedToday: r.requests?.current ?? null, limitDay: r.requests?.limit_day ?? null };
 }
+
+// One request: can this plan read the current season? (Free plans are season-limited.)
+export async function seasonAccess(teamId, seasonYear, fromIso, toIso) {
+  try {
+    const r = await get(`/fixtures?team=${teamId}&season=${seasonYear}&from=${fromIso}&to=${toIso}`);
+    return { ok: true, fixtures: r.length, next: r[0] ? { id: r[0].fixture.id, date: r[0].fixture.date, opponent: r[0].teams.home.id === teamId ? r[0].teams.away.name : r[0].teams.home.name } : null };
+  } catch (err) { return { ok: false, error: String(err.message) }; }
+}

@@ -75,7 +75,18 @@ export async function runLive({ built, stateDir, now, spursElementIds, elementsB
     const chkFile = path.join(dir, 'account.json');
     const chk = readJson(chkFile, {});
     if (!chk.at || now - new Date(chk.at) > 20 * 3600e3) {
-      try { const a = await af.accountStatus(); writeJson(chkFile, { ...a, at: now.toISOString() }); health.ok({ records: { plan: a.plan, active: a.active, usedToday: a.usedToday, limitDay: a.limitDay }, note: 'Key accepted. Live statistics switch on automatically during Spurs matches.' }); }
+      try {
+        const a = await af.accountStatus();
+        // Once a day, check the plan can read this season (2 requests at most).
+        const ids = readJson(path.join(dir, 'ids.json'), {});
+        if (!ids.teamId) { ids.teamId = await af.findTeamId(); writeJson(path.join(dir, 'ids.json'), ids); }
+        const from = now.toISOString().slice(0, 10); const to = new Date(now.getTime() + 10 * 86400e3).toISOString().slice(0, 10);
+        const yr = now.getUTCMonth() >= 6 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
+        const acc = await af.seasonAccess(ids.teamId, yr, from, to);
+        writeJson(chkFile, { ...a, seasonAccess: acc, at: now.toISOString() });
+        health.ok({ records: { plan: a.plan, active: a.active, usedToday: a.usedToday, limitDay: a.limitDay, seasonAccess: acc.ok, upcoming: acc.next ? `${acc.next.opponent} ${acc.next.date}` : null },
+          note: acc.ok ? 'Key accepted and the current season is readable. Live statistics switch on automatically during Spurs matches.' : `Key accepted, but the free plan cannot read the current season (${acc.error}). Live player figures still come from FPL.` });
+      }
       catch (err) { writeJson(chkFile, { at: now.toISOString(), error: String(err.message) }); health.fail(err); }
     }
   }
