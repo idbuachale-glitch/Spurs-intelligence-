@@ -438,3 +438,8 @@ body.chart-open { overflow: hidden; }
 .chart .badge-bg { fill: #eef3fb; stroke: var(--line-strong); stroke-width: 1; }
 .chart .badge-txt { fill: #0b1640; font-weight: 700; }
 .ichart .badge-ring { fill: none; stroke: var(--cyan); stroke-width: 2.5; }
+
+/* Club crests next to team names */
+.tcrest { width: 18px; height: 18px; object-fit: contain; vertical-align: -4px; margin-right: 6px; display: inline-block; }
+.tcrest.big { display: block; width: 44px; height: 44px; margin: 0 0 6px; }
+.fixture-board .team.right .tcrest.big { margin-left: auto; }
