@@ -1,0 +1,116 @@
+name: Sync data and publish
+
+on:
+  schedule:
+    - cron: '7,27,47 * * * *'   # every 20 minutes (off the hour to avoid GitHub's busiest minutes)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run every job now, ignoring the schedule'
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ['site/**', 'pipeline/**', '.github/workflows/sync.yml']
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+    outputs:
+      rc: ${{ steps.run.outputs.rc }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Fast-changing bookkeeping (schedule, health counters, latest raw snapshot) lives in
+      # the Actions cache between runs; everything durable is committed to the repository.
+      - name: Restore run state
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            state/scheduler.json
+            state/raw
+            site/data/status.json
+            site/data/meta.json
+          key: run-state-${{ github.run_id }}
+          restore-keys: run-state-
+
+      - name: Run sync
+        id: run
+        env:
+          FOOTBALL_DATA_KEY: ${{ secrets.FOOTBALL_DATA_KEY }}
+          TSDB_KEY: ${{ secrets.TSDB_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUPPLEMENTARY_STATS: ${{ vars.SUPPLEMENTARY_STATS || 'on' }}
+          FORCE_ALL: ${{ inputs.force && '1' || '0' }}
+        run: |
+          set +e
+          node pipeline/sync.js
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          # rc 1 = could not produce any dataset; rc 2 = persistent source failure (data still published)
+          if [ "$rc" = "1" ]; then exit 1; fi
+          exit 0
+
+      - name: Save run state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            state/scheduler.json
+            state/raw
+            site/data/status.json
+            site/data/meta.json
+          key: run-state-${{ github.run_id }}
+
+      - name: Commit data changes
+        run: |
+          git config user.name "spurs-intelligence-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A site/data state
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          # Commit football-data changes immediately; bookkeeping-only changes at most every 3 hours.
+          meaningful=$(git diff --cached --name-only | grep -vE '^(site/data/(status|meta)\.json|state/scheduler\.json|state/raw/)' | wc -l)
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          if [ "$meaningful" = "0" ] && [ $((now - last)) -lt 10800 ]; then echo "Only bookkeeping changed; skipping commit"; git reset -q; exit 0; fi
+          git commit -q -m "Data update $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do git pull -q --rebase -X ours && git push -q && break; sleep 5; done
+
+      - name: Prepare site
+        run: cp -r site _site && touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+        continue-on-error: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+
+      - name: Flag persistent source failure
+        if: steps.run.outputs.rc == '2'
+        run: |
+          echo "::error::A data source has failed repeatedly. The site is still serving the last valid data; see the Data sources page."
+          exit 1
