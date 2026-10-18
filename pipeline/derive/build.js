@@ -3,6 +3,7 @@
 import { STATS, POS, normalizePos, playerMatch, aggregate, resultOf, leagueTable, round, ageOn } from './stats.js';
 import { num } from '../lib/validate.js';
 import { matchBreakdown } from './breakdown.js';
+import { clubProfiles, scoutReport } from './opposition.js';
 import { recordedColumns, playerRow as fcPlayerRow, teamSide, shotRow, tournamentLabel, opponentFromSlug } from '../adapters/fplcore.js';
 
 const TEAM_ALIASES = {
@@ -292,6 +293,17 @@ export function buildSeason(input) {
     mf.breakdown = matchBreakdown({ match: mf, teamSummary, seasonPlayers: players });
     const fx = fixtures.find((x) => x.id === mf.fixture.id);
     if (fx && mf.breakdown) fx.hasBreakdown = true;
+  }
+  // Opposition scouting for the next upcoming matches against Premier League clubs.
+  if (isCurrent) {
+    const clubs = clubProfiles(detail.leagueMatches || [], teams);
+    const upcoming = fixtures.filter((f) => (f.status === 'SCHEDULED' || f.status === 'POSTPONED') && f.opponentTeamId && !f.friendly).slice(0, 6);
+    for (const f of upcoming) {
+      const mf = matchFiles[`matches/${f.id}.json`];
+      if (!mf) continue;
+      mf.preview = scoutReport({ fixture: f, opp: f.opponentTeamId, teams, fplFixtures, elements, table, clubs, spursId, spursCode: clubCode });
+      if (mf.preview) { f.hasPreview = true; mf.fixture.hasPreview = true; }
+    }
   }
   teamSummary.shotZones = shotZones(Object.values(matchFiles).filter((m) => m.fixture.competition === 'Premier League' && m.detail).flatMap((m) => m.detail.shots));
 

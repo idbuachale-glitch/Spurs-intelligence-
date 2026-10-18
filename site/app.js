@@ -119,7 +119,7 @@ async function setupSearch() {
 // ---------------- Shared bits ----------------
 const fixtureRow = (f) => `<a class="fx" href="#/match/${encodeURIComponent(f.id)}">
   <div class="when">${esc(fmtDate(f.kickoff))}<br><span class="faint">${esc(fmtTime(f.kickoff))} Bahrain</span></div>
-  <div><div class="who">${f.home ? '' : '@ '}${esc(f.opponent)}${f.home ? ' (H)' : ''}</div><div class="comp">${esc(f.competition)}${f.gameweek ? ` · GW${f.gameweek}` : ''}${f.status !== 'FT' && f.status !== 'SCHEDULED' ? ` · ${esc(statusText[f.status] || f.status)}` : ''}${f.kickoffHistory?.length ? ' · rescheduled' : ''}</div></div>
+  <div><div class="who">${f.home ? '' : '@ '}${esc(f.opponent)}${f.home ? ' (H)' : ''}</div><div class="comp">${esc(f.competition)}${f.gameweek ? ` · GW${f.gameweek}` : ''}${f.status !== 'FT' && f.status !== 'SCHEDULED' ? ` · ${esc(statusText[f.status] || f.status)}` : ''}${f.kickoffHistory?.length ? ' · rescheduled' : ''}${f.hasPreview ? ' · <span style="color:var(--cyan)">scouting report</span>' : ''}</div></div>
   <div class="scorebox">${f.score ? `${f.score.spurs}–${f.score.opp} ${resultChip(f.result, true)}` : `<span class="small muted" style="font-family:var(--body);font-weight:400">${f.status === 'POSTPONED' ? 'TBC' : ''}</span>`}</div></a>`;
 
 const src = (text, at) => `<p class="source">Source: ${esc(text)}${at ? `. Retrieved ${esc(fmtDateTime(at))} (Bahrain)` : ''}.</p>`;
@@ -145,7 +145,7 @@ VIEWS.overview = async () => {
         <div class="mid"><div class="clock">${next.status === 'LIVE' && next.score ? `${next.home ? next.score.spurs : next.score.opp}–${next.home ? next.score.opp : next.score.spurs}` : esc(fmtTime(next.kickoff))}</div><div class="vs">${esc(fmtDate(next.kickoff, { weekday: 'long', day: 'numeric', month: 'long' }))}</div></div>
         <div class="team right">${next.home ? esc(next.opponent) : 'Spurs'}</div></div>
       <div class="countdown" id="countdown" data-k="${esc(next.kickoff || '')}"></div>
-      <div class="hero-meta"><span>Kick-off <strong>${esc(fmtTime(next.kickoff))}</strong> Bahrain time</span><span>${next.home ? 'Tottenham Hotspur Stadium' : 'Away'}</span>${me ? `<span>Spurs are <strong>${ordinal(me.position)}</strong> on ${me.points} pts</span>` : ''}</div>
+      <div class="hero-meta">${next.hasPreview ? `<a href="#/match/${encodeURIComponent(next.id)}" style="color:#3ce8ff;font-weight:600">Scout ${esc(next.opponent)}</a>` : ''}<span>Kick-off <strong>${esc(fmtTime(next.kickoff))}</strong> Bahrain time</span><span>${next.home ? 'Tottenham Hotspur Stadium' : 'Away'}</span>${me ? `<span>Spurs are <strong>${ordinal(me.position)}</strong> on ${me.points} pts</span>` : ''}</div>
     </section>` : `<section class="hero"><div class="kicker">No upcoming fixture is listed yet for ${esc(s.replace('-', '/'))}.</div></section>`;
   return `${hero}
   <div class="grid four section">
@@ -549,7 +549,8 @@ VIEWS.match = async (id) => {
   return `<section class="hero"><div class="kicker">${esc(f.competition)}${f.gameweek ? `, gameweek ${f.gameweek}` : ''} · ${esc(statusText[f.status] || f.status)}${f.resultNote ? ` · ${esc(f.resultNote)}` : ''}</div>
     <div class="fixture-board"><div class="team">${esc(L)}</div><div class="mid"><div class="clock">${sc}</div><div class="vs">${esc(fmtDate(f.kickoff, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}, ${esc(fmtTime(f.kickoff))} Bahrain</div></div><div class="team right">${esc(R)}</div></div>
     <div class="hero-meta"><span>${f.home ? 'Home' : 'Away'}${f.venueName ? ` · ${esc(f.venueName)}` : ''}</span>${f.kickoffHistory?.length ? `<span>Rescheduled (was ${esc(fmtDateTime(f.kickoffHistory[f.kickoffHistory.length - 1].was))})</span>` : ''}${f.verification ? `<span>Score ${f.verification.agrees ? 'confirmed' : 'differs'} by ${esc(f.verification.source)}</span>` : ''}</div></section>
-  <div class="grid two section">
+  ${m.preview ? scoutHtml(m.preview, f) : ''}
+  <div class="grid two section" ${f.score ? '' : 'hidden'}>
     <div class="panel"><h2>Key events</h2>
       ${goals.length ? goals.map((g) => `<div class="statrow"><span>${g.team === 'spurs' ? '⚽ ' : ''}<strong>${esc(g.player || 'Unknown')}</strong> <span class="muted small">${g.team === 'spurs' ? 'Spurs' : esc(f.opponent)} · ${esc(SIT[g.situation] || g.situation || '')}</span></span><span class="v">${g.minute}'${g.added ? `+${g.added}` : ''}</span></div>`).join('') : ev('goal').map((e) => `<div class="statrow"><span><strong>${esc(e.player)}</strong> <span class="muted small">${e.team === 'spurs' ? 'Spurs' : esc(f.opponent)}</span></span><span class="v">${e.value > 1 ? `${e.value} goals` : 'Goal'}</span></div>`).join('') || '<p class="na">No goals.</p>'}
       ${ev('own_goal').map((e) => `<div class="statrow"><span>Own goal: ${esc(e.player)}</span><span></span></div>`).join('')}
@@ -563,10 +564,11 @@ VIEWS.match = async (id) => {
     ], { right: f.opponent }) + `<p class="source">FotMob match statistics via FPL Core Insights (xG here is FotMob's; the season figures use FPL/Opta xG).</p>` : m.team && m.team.xg !== null ? `<div class="statlist"><div class="statrow"><span>Spurs xG (FPL)</span><span class="v">${fmtPlain(m.team.xg, 2)}</span></div><div class="statrow"><span>xG against (est.)</span><span class="v">${fmtPlain(m.team.xga, 2)}</span></div></div>` : '<p class="na">Team statistics are not available for this match.</p>'}</div>
   </div>
   ${notes.length ? `<div class="panel section"><div class="section-head"><h2>Post-match notes</h2><span class="label-analysis">Calculated analysis</span></div>${notes.map((n) => `<p>${esc(n)}</p>`).join('')}</div>` : ''}
+
   ${d?.fotmobUrl ? `<div class="banner info section">Player heat maps, average positions and pass maps for this match are not in the free data. FotMob shows them on its own match page: <a href="${esc(d.fotmobUrl)}" target="_blank" rel="noopener">open this match on FotMob</a>.</div>` : ''}
   ${d && (d.xgRace?.length || d.momentum?.length) ? `<div class="grid two section"><div class="panel"><h2>xG race</h2>${xgRace(d.xgRace, { opp: f.opponent })}<p class="source">Cumulative xG by minute (FotMob).</p></div><div class="panel"><h2>Momentum</h2>${momentumChart(d.momentum, { opp: f.opponent })}<p class="source">FotMob attacking-momentum index per minute.</p></div></div>` : ''}
   ${d?.shots?.length ? `<div class="grid two section"><div class="panel"><h2>Spurs shots</h2>${shotMap(d.shots.filter((s) => s.team === 'spurs'))}</div><div class="panel"><h2>${esc(f.opponent)} shots</h2>${shotMap(d.shots.filter((s) => s.team === 'opp'))}</div></div>` : ''}
-  <div class="panel section"><div class="section-head"><h2>Spurs players</h2>${m.lineup.length ? `<div class="tabs" role="group" aria-label="Statistic group">${Object.keys(MATCH_TABS).map((t, i) => `<button data-mtab="${t}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>` : ''}</div>
+  <div class="panel section" ${f.score || m.lineup.length ? '' : 'hidden'}><div class="section-head"><h2>Spurs players</h2>${m.lineup.length ? `<div class="tabs" role="group" aria-label="Statistic group">${Object.keys(MATCH_TABS).map((t, i) => `<button data-mtab="${t}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>` : ''}</div>
     <div id="m-lineup">${m.lineup.length ? lineupTable(m.lineup, 'Attacking') : '<p class="na">Player statistics are not available for this match yet.</p>'}</div>
     ${m.statsComplete === false && f.status !== 'SCHEDULED' ? '<p class="small" style="color:var(--warn)">Statistics may still be incomplete; the site re-checks automatically after each match.</p>' : ''}</div>
   ${m.videos?.length ? `<div class="panel section"><h2>Official video</h2><div class="grid three">${m.videos.map((v) => `<div class="video-card"><a href="${esc(v.url)}" target="_blank" rel="noopener"><img loading="lazy" alt="" src="${esc(v.thumbnail || '')}" style="width:100%;border-radius:8px"></a><span class="small">${esc(v.title)}</span><span class="badge ${v.relation === 'contextual' ? 'partial' : 'no'}">${v.relation === 'contextual' ? 'Contextual' : 'Illustrative'}</span></div>`).join('')}</div></div>` : ''}
@@ -594,6 +596,34 @@ AFTER.match = async (id) => {
     const box = document.getElementById('m-lineup'); box.innerHTML = lineupTable(m.lineup, b.dataset.mtab); sortableTable(box.querySelector('table'));
   }));
 };
+
+function scoutHtml(p, f) {
+  const kindColor = { opportunity: 'var(--win)', threat: 'var(--loss)', watch: 'var(--draw)' };
+  const kindLabel = { opportunity: 'Opportunity', threat: 'Threat', watch: 'Watch' };
+  const t = p.table;
+  const plist = (rows, cols) => rows.length ? rows.map((r) => `<div class="statrow"><span><strong>${esc(r.name)}</strong> <span class="faint tiny">${esc(r.pos || '')}</span></span><span class="small">${cols(r)}</span></div>`).join('') : '<p class="na small">None stand out yet.</p>';
+  return `<section class="section"><div class="section-head"><h2>Scouting ${esc(p.opponent)}</h2><span class="label-analysis">Updated automatically</span></div>
+  <div class="rank-grid">
+    ${t ? `<div class="rank-tile"><div class="val">${ordinal(t.position)}</div><div class="lbl">League position</div><div class="ctx">${t.points} pts from ${t.played} · ${t.won}W ${t.drawn}D ${t.lost}L · GD ${t.gd > 0 ? '+' : ''}${t.gd}${p.spursTable ? ` · Spurs ${ordinal(p.spursTable.position)}` : ''}</div></div>` : ''}
+    <div class="rank-tile"><div class="val">${p.venue.w}-${p.venue.d}-${p.venue.l}</div><div class="lbl">${esc(p.venue.label)}</div><div class="ctx">${p.venue.n} matches · scored ${p.venue.gf}, conceded ${p.venue.ga}</div></div>
+    <div class="rank-tile"><div class="val">${p.overall.gf}–${p.overall.ga}</div><div class="lbl">Goals for and against</div><div class="ctx">${p.overall.n} league matches this season</div></div>
+  </div>
+  ${p.form.length ? `<div class="panel section"><h3>Recent form</h3><div class="form-strip" style="margin-bottom:10px">${p.form.map((g) => resultChip(g.result)).join('')}</div>${p.form.slice().reverse().map((g) => `<div class="statrow"><span>${esc(fmtDate(g.kickoff, { day: 'numeric', month: 'short' }))} · ${g.home ? 'v' : '@'} ${esc(g.opponent)}</span><span class="v">${g.gf}–${g.ga}</span></div>`).join('')}</div>` : ''}
+  ${p.tags.length ? `<div class="chips section">${p.tags.map((x) => `<span class="pill" style="color:#bff6ff;border-color:rgba(60,232,255,.4)">${esc(x)}</span>`).join('')}</div>` : ''}
+  ${p.notes.length ? `<div class="panel section"><h3>Matchup notes</h3>${p.notes.map((n) => `<div class="insight" style="border-left-color:${kindColor[n.kind]}"><p style="margin:0"><strong style="color:${kindColor[n.kind]}">${kindLabel[n.kind]}.</strong> ${esc(n.text)}</p></div>`).join('')}<p class="tiny faint">${esc(p.label)}</p></div>` : ''}
+  ${p.profile.length ? `<div class="panel section"><h3>How they play</h3><div class="table-wrap"><table><thead><tr><th>Per match</th><th class="r">${esc(p.short || p.opponent)}</th><th class="r">Rank</th><th class="r">Spurs</th><th class="r">League avg</th></tr></thead><tbody>
+    ${p.profile.map((r) => `<tr><td style="white-space:normal">${esc(r.label)}</td><td class="r"><strong>${fmtPlain(r.value, r.unit === '%' ? 1 : 2)}${r.unit}</strong></td><td class="r ${r.rank <= 5 ? '' : ''}" style="color:${r.rank <= 5 ? 'var(--win)' : r.rank >= 16 ? 'var(--loss)' : 'inherit'}">${r.rank ? `${ordinal(r.rank)}` : '—'}</td><td class="r">${r.spurs === null ? '—' : `${fmtPlain(r.spurs, r.unit === '%' ? 1 : 2)}${r.unit}`}</td><td class="r faint">${r.leagueAvg === null ? '—' : `${fmtPlain(r.leagueAvg, r.unit === '%' ? 1 : 2)}${r.unit}`}</td></tr>`).join('')}</tbody></table></div>
+    <p class="source">Averages over ${p.profileMatches} league matches. Rank 1st = best in that measure (for "conceded" rows, 1st = conceded least).</p></div>` : '<div class="banner info section">Detailed style numbers for this opponent are not available yet.</div>'}
+  <div class="grid two section">
+    <div class="panel"><h3>Danger men (xG + xA)</h3>${plist(p.dangerMen, (r) => `${r.goals} G · ${r.assists} A · <strong class="num">${fmtPlain(r.xg + r.xa, 2)}</strong> xG+xA`)}
+      <h3 style="margin-top:14px">Top scorers</h3>${plist(p.topScorers, (r) => `<strong class="num">${r.goals}</strong> goals · ${r.minutes} min`)}
+      <h3 style="margin-top:14px">Chief creators (xA)</h3>${plist(p.creators, (r) => `<strong class="num">${fmtPlain(r.xa, 2)}</strong> xA · ${r.assists} assists`)}</div>
+    <div class="panel"><h3>Team news</h3>${p.news.length ? p.news.map((n) => `<div class="statrow"><span><strong>${esc(n.name)}</strong> <span class="faint tiny">${esc(n.pos || '')}</span></span><span class="small" style="text-align:right;color:var(--warn)">${esc(n.status)}${n.chance !== null ? ` (${n.chance}%)` : ''}${n.news ? `<br><span class="muted">${esc(n.news)}</span>` : ''}</span></div>`).join('') : '<p class="small muted">No injuries or suspensions flagged for regular players.</p>'}
+      ${p.keeper ? `<h3 style="margin-top:14px">Goalkeeper</h3><div class="statrow"><span><strong>${esc(p.keeper.name)}</strong></span><span class="small">${p.keeper.saves} saves · ${p.keeper.cs} clean sheets · ${p.keeper.gc} conceded</span></div>` : ''}
+      <p class="source">Availability from the Premier League's official player status.</p></div>
+  </div>
+  <p class="source">Sources: ${esc(p.sources.join('; '))}.</p></section>`;
+}
 
 function postMatch(m) {
   const out = []; const f = m.fixture; const t = m.team; const adv = t?.adv;
