@@ -329,7 +329,7 @@ table.lab td.sticky-col a { font-weight: 600; }
 table.lab .sub { display: block; font-size: 0.7rem; color: var(--faint); margin-top: 2px; white-space: normal; }
 table.lab .sub .st { display: block; }
 @media (max-width: 640px) {
-  .lab-tabs { width: 100%; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .lab-tabs { width: 100%; box-sizing: border-box; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-radius: 18px; }
   .lab-tabs button { padding: 7px 2px; font-size: 0.78rem; min-width: 0; }
   table.lab td.sticky-col { width: 92px; max-width: 92px; }
   table.lab td.sticky-col a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
