@@ -266,7 +266,7 @@ export function squadPlanner({ players, pool, spursId, ranksByPos }) {
       const diffs = feats.filter((k) => s.f[k] !== null && me.f[k] !== null).map((k) => ({ k, label: FEATURE_LABELS[k], them: round(s.f[k], 2), spurs: round(me.f[k], 2), z: Math.abs(s.f[k] - me.f[k]) / sd[k] }));
       const close = diffs.filter((d) => d.z <= 0.5).sort((a, b) => a.z - b.z).slice(0, 4);
       const apart = diffs.filter((d) => d.z > 0.9).sort((a, b) => b.z - a.z).slice(0, 2).map((d) => ({ ...d, higher: d.them > d.spurs }));
-      const strengths = feats.map((k) => { const r = pctOf(k, s.f[k]); return { k, label: FEATURE_LABELS[k], value: round(s.f[k], 2), pct: r === null ? null : lowerBetter.has(k) ? 100 - r : r }; })
+      const strengths = feats.map((k) => { const r = pctOf(k, s.f[k]); return { k, label: lowerBetter.has(k) ? `Low ${FEATURE_LABELS[k].toLowerCase()} (team, while on pitch)` : FEATURE_LABELS[k], value: round(s.f[k], 2), pct: r === null ? null : lowerBetter.has(k) ? 100 - r : r }; })
         .filter((x) => x.pct !== null && x.pct >= 75).sort((a, b) => b.pct - a.pct).slice(0, 3);
       const t = s.totals;
       return {
