@@ -65,6 +65,8 @@ export const STATS = [
   { key: 'duelsLost', label: 'Duels lost', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore' },
   { key: 'aerialWon', label: 'Aerial duels won', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore' },
   { key: 'aerialAtt', label: 'Aerial duels contested (derived)', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore', derivedAttempts: true },
+  { key: 'groundDuelsWon', label: 'Ground duels won', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore' },
+  { key: 'headedClearances', label: 'Headed clearances', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore' },
   { key: 'dribbledPast', label: 'Dribbled past', cat: 'defensive', pos: 'outfield', per90: true, src: 'fplcore' },
   { key: 'foulsCommitted', label: 'Fouls committed', cat: 'discipline', pos: 'all', per90: true, src: 'fplcore' },
   { key: 'gkSaves', label: 'Saves (FotMob)', cat: 'goalkeeping', pos: 'gk', per90: true, src: 'fplcore' },
@@ -73,6 +75,8 @@ export const STATS = [
   { key: 'savesInBox', label: 'Saves inside box', cat: 'goalkeeping', pos: 'gk', src: 'fplcore' },
   { key: 'sweeperActions', label: 'Sweeper actions', cat: 'goalkeeping', pos: 'gk', per90: true, src: 'fplcore' },
   { key: 'highClaims', label: 'High claims', cat: 'goalkeeping', pos: 'gk', src: 'fplcore' },
+  { key: 'gkPassesAcc', label: 'Accurate passes (distribution)', cat: 'goalkeeping', pos: 'gk', per90: true, src: 'fplcore' },
+  { key: 'gkLongBallsAcc', label: 'Accurate long balls (distribution)', cat: 'goalkeeping', pos: 'gk', per90: true, src: 'fplcore' },
 ];
 
 // Success rates: numerator and attempts are summed over the same matches only.
@@ -89,13 +93,30 @@ export const RATES = [
 
 // What the free sources do NOT provide. Shown in the UI so gaps are never hidden.
 export const UNAVAILABLE = {
-  attacking: ['Shots', 'Shots on target', 'Shot conversion %', 'Key passes / chances created', 'Big chances', 'Touches in opposition box', 'Take-ons attempted / successful', 'Take-on success %', 'Dispossessed', 'Carries & progressive carries', 'Fouls won'],
-  passing: ['Pass maps & pass combinations (passer → receiver)', 'Heat maps / touch locations', 'Progressive passes', 'Passes into final third / box', 'Through balls, crosses, long balls', 'Possession lost', 'Touches'],
-  defensive: ['Tackles won %', 'Duels & aerial duels', 'Fouls committed', 'Pressures'],
-  goalkeeping: ['Post-shot xG / goals prevented (PSxG)', 'Distribution & passing'],
+  attacking: ['Carries & progressive carries'],
+  passing: ['Pass maps & pass combinations (passer → receiver)', 'Heat maps / touch locations', 'Progressive passes', 'Passes into the penalty area', 'Through balls', 'Possession lost (total)'],
+  defensive: ['Pressures & pressure success'],
+  goalkeeping: [],
   identity: ['Height', 'Preferred foot', 'Contract expiry'],
-  team: ['Possession %', 'Pass accuracy', 'Shots', 'Big chances', 'Set-piece breakdown', 'First/second-half splits', 'Pressing intensity (PPDA)', 'Formation'],
+  team: ['Pressing intensity (PPDA)', 'Formation'],
 };
+
+// Statistics that once looked unavailable but are now collected, and where they appear.
+export const NOW_AVAILABLE = [
+  ['Shots, shots on target, shot conversion %', 'Player Lab (Attacking), player profiles, Team statistics'],
+  ['Key passes / chances created, big chances', 'Player Lab (Attacking), player profiles, Team statistics'],
+  ['Touches in opposition box, touches', 'Player Lab (Attacking / Passing), player profiles'],
+  ['Take-ons and take-on success %', 'Team statistics (team totals); per player only in matches where the source recorded them'],
+  ['Dispossessed, fouls won, fouls committed', 'Player profiles (Attacking / Discipline)'],
+  ['Passes into final third, crosses, long balls, pass accuracy', 'Player Lab (Passing), player profiles, Team statistics'],
+  ['Tackle success %, duels, ground and aerial duels', 'Player Lab (Defending), player profiles'],
+  ['Post-shot xG faced and goals prevented', 'Player Lab (Goalkeeping), goalkeeper profiles'],
+  ['Goalkeeper distribution (passes and long balls)', 'Player Lab (Goalkeeping), goalkeeper profiles'],
+  ['Possession %, field tilt, pass accuracy (team)', 'Team statistics, De Zerbi tracker, Match breakdown'],
+  ['Set-piece breakdown (set-piece xG, goals and shots)', 'Team statistics'],
+  ['First- and second-half splits', 'Team statistics, Match breakdown'],
+  ['Set-piece takers (corners, free kicks, penalties)', 'Team statistics, player profiles'],
+];
 
 export const POS = { 1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD' };
 export const POS_LABEL = { GK: 'Goalkeeper', DEF: 'Defender', MID: 'Midfielder', FWD: 'Forward' };

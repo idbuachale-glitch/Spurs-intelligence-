@@ -240,6 +240,8 @@ export function buildSeason(input) {
       aliases: [...new Set([e.web_name, e.known_name, e.first_name, e.second_name, ...(aliases[String(code)] || []), ...(aliases[e.second_name] || []), ...(aliases[e.web_name] || [])].filter(Boolean))],
       season: agg, seasonAll: aggAll, seasonCups: aggCups.apps ? aggCups : null,
       lastMatch: rows.length ? rows[rows.length - 1].matchId : null,
+      // FPL's published set-piece order (1 = first choice); null when FPL lists none.
+      setPieces: current ? { corners: num(e.corners_and_indirect_freekicks_order), freeKicks: num(e.direct_freekicks_order), penalties: num(e.penalties_order) } : null,
     };
     players.push(p);
     playerFiles[`players/${p.id}.json`] = { season, generatedAt, source: sourceRef, player: p, matches: rows, shots: [] };
@@ -291,6 +293,7 @@ export function buildSeason(input) {
   // ---- Team intelligence ----
   const teamSummary = summariseTeam(teamMatches, fixtures);
   teamSummary.leagueRanks = leagueAdvancedRanks(detail.leagueMatches || [], teams, clubCode);
+  if (isCurrent) teamSummary.fplRanks = leagueFplRanks(elements, table, teams, spursId);
   for (const mf of Object.values(matchFiles)) {
     if (!mf.fixture.score) continue;
     mf.breakdown = matchBreakdown({ match: mf, teamSummary, seasonPlayers: players });
@@ -500,6 +503,32 @@ export function leagueAdvancedRanks(rows, teams, clubCode) {
     out[k] = { label, unit, lowerBetter, value: round(list[i].value, 2), rank: i + 1, of: list.length, leagueAvg: round(avg, 2), leader: { team: teamByCode.get(list[0].code)?.name || null, value: round(list[0].value, 2) }, matches: list[i].n };
   }
   return { metrics: out, source: 'FPL Core Insights (FotMob match data), all Premier League matches in rounds where Spurs have played' };
+}
+
+// League ranks for FPL defensive totals: every club's players' Premier League season
+// totals summed, divided by that club's league matches played. Ranked by most per match.
+// FPL keeps a transferred player's totals with his current club, so mid-season moves can
+// shift a club's figure slightly; the Spurs value here uses the same method as the others.
+export function leagueFplRanks(elements, table, teams, spursId) {
+  const fields = { tackles: 'tackles', cbi: 'clearances_blocks_interceptions', recoveries: 'recoveries', defcon: 'defensive_contribution', saves: 'saves', yc: 'yellow_cards' };
+  const played = new Map(table.map((r) => [r.teamId, r.played]));
+  const sums = new Map();
+  for (const e of elements.values()) {
+    const t = num(e.team); if (t === null) continue;
+    const row = sums.get(t) || Object.fromEntries(Object.keys(fields).map((k) => [k, null]));
+    for (const [k, f] of Object.entries(fields)) { const v = num(e[f]); if (v !== null) row[k] = (row[k] || 0) + v; }
+    sums.set(t, row);
+  }
+  const name = new Map(teams.map((t) => [t.id, t.name]));
+  const out = {};
+  for (const k of Object.keys(fields)) {
+    const list = [...sums].filter(([id, r]) => played.get(id) > 0 && r[k] !== null).map(([id, r]) => ({ id, value: r[k] / played.get(id) }));
+    if (list.length < 10) continue;
+    list.sort((a, b) => b.value - a.value);
+    const i = list.findIndex((x) => x.id === spursId); if (i < 0) continue;
+    out[k] = { value: round(list[i].value, 2), rank: i + 1, of: list.length, leagueAvg: round(list.reduce((s, x) => s + x.value, 0) / list.length, 2), leader: { team: name.get(list[0].id) || null, value: round(list[0].value, 2) } };
+  }
+  return { metrics: out, basis: 'Ranked by most per match (1st = most). Each club\'s players\' Premier League season totals ÷ league matches played.', source: 'Fantasy Premier League API (Opta-derived)' };
 }
 
 // Spurs shots by pitch zone (measured from shot coordinates).

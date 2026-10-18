@@ -26,7 +26,8 @@ export async function fetchChannel(channel) {
   if (!ids.length) throw new Error(`YouTube: could not resolve ${channel.handle}`);
   for (const channelId of ids) {
     try {
-      const { body } = await request(`${cfg.base}/feeds/videos.xml?channel_id=${channelId}`, { as: 'text' });
+      // One retry only: feeds are re-read every 30–120 minutes, so a miss costs little.
+      const { body } = await request(`${cfg.base}/feeds/videos.xml?channel_id=${channelId}`, { as: 'text', retries: 1 });
       const feed = parseFeed(body);
       if (!feed.author.toLowerCase().includes(channel.expectName)) {
         lastErr = new Error(`YouTube: channel ${channelId} is "${feed.author}", expected "${channel.expectName}" — refusing unverified source`);

@@ -15,12 +15,12 @@ import * as fc from './adapters/fplcore.js';
 import * as wiki from './adapters/wikipedia.js';
 import { buildSeason } from './derive/build.js';
 import { setMinMinutes, minMinutes, leaguePool, leagueTeamRanks, insights, tactical, squadPlanner, positionRanks, playerPercentiles, scoutingSummary, article, coachFor } from './derive/analysis.js';
-import { STATS, RATES, UNAVAILABLE, POS_LABEL } from './derive/stats.js';
+import { STATS, RATES, UNAVAILABLE, NOW_AVAILABLE, POS_LABEL } from './derive/stats.js';
 import { ratings, expectedGoals, matchProbabilities, simulateSeason } from './derive/simulate.js';
 
 const ELEMENT_FIELDS = ['id', 'code', 'first_name', 'second_name', 'web_name', 'known_name', 'team', 'element_type', 'birth_date', 'region', 'squad_number', 'team_join_date',
   'status', 'news', 'news_added', 'chance_of_playing_next_round', 'removed', 'minutes', 'starts', 'goals_scored', 'assists', 'expected_goals', 'expected_assists',
-  'expected_goals_conceded', 'goals_conceded', 'clearances_blocks_interceptions', 'tackles', 'recoveries', 'defensive_contribution', 'saves', 'clean_sheets', 'threat', 'creativity', 'influence'];
+  'expected_goals_conceded', 'goals_conceded', 'clearances_blocks_interceptions', 'tackles', 'recoveries', 'defensive_contribution', 'saves', 'yellow_cards', 'clean_sheets', 'corners_and_indirect_freekicks_order', 'direct_freekicks_order', 'penalties_order', 'threat', 'creativity', 'influence'];
 
 export async function runSync({ now = new Date(), force = false, siteData = SITE_DATA, stateDir = STATE_DIR } = {}) {
   const S = (...p) => path.join(stateDir, ...p);
@@ -367,7 +367,7 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     headCoach: coachFor(nowIso), coachEras: COACH_ERAS, generatedAt: nowIso,
     dataUpdatedAt: { fixtures: fixtures.retrievedAt, playerStats: maxRetrieved(histDir), matchDetail: maxRetrieved(fcDir), cups: cups.retrievedAt || null, video: status.sources['youtube-spurs']?.lastSuccess || null },
     nextMatchId: next ? next.id : null, lastMatchId: last ? last.id : null,
-    statDefs: STATS.map(({ field, ...s }) => ({ ...s, sourceField: field || null })), rateDefs: RATES, supplementaryEnabled: fc.enabled(), unavailable: UNAVAILABLE, posLabels: POS_LABEL,
+    statDefs: STATS.map(({ field, ...s }) => ({ ...s, sourceField: field || null })), rateDefs: RATES, supplementaryEnabled: fc.enabled(), unavailable: UNAVAILABLE, nowAvailable: NOW_AVAILABLE, posLabels: POS_LABEL,
   });
   status.lastRun = nowIso;
   status.runFilesChanged = changed;

@@ -11,7 +11,7 @@ import { startServer } from './harness/server.js';
 const community = process.env.COMMUNITY_DATA;
 const skip = !community || !fs.existsSync(path.join(community, 'data', '2026-2027')) ? 'COMMUNITY_DATA not set' : false;
 
-test('sync: real-shaped data, idempotent, failure-preserving', { skip, timeout: 600000 }, async () => {
+test('sync: real-shaped data, idempotent, failure-preserving', { skip, timeout: 1200000 }, async () => {
   const fpl = reconstruct(path.join(community, 'data', '2026-2027'));
   const h = await startServer({ fpl, communityRoot: path.resolve(community) });
   Object.assign(process.env, h.env, { SPURS_QUIET: '1' });

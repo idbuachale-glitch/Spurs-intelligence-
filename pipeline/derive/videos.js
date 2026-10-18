@@ -23,12 +23,15 @@ const ANALYSIS_TERMS = /analys|tactic|explain|breakdown|broken down|\bbreak(ing)
 
 const COMMON_FIRST = new Set(['jan paul', 'james', 'lucas', 'pedro', 'mohammed', 'mohamed', 'conor', 'kevin', 'micky', 'archie', 'mathys', 'destiny', 'joao', 'xavi', 'dejan', 'brennan', 'cristian', 'radu', 'pape', 'yves', 'antonin', 'kota', 'djed', 'guglielmo', 'dominic', 'randal']);
 
+const STRONG = /analys|tactic|breakdown|broken down|explain|\bsystem\b|formation|build[- ]?up|\bpress(ing)?\b|\bshape\b|\brole\b|\bxg\b|\bstats?\b|statistic|\bdata\b|by the numbers|masterclass|deep dive|\bblueprint\b/;
+const NEWSY = /transfer|injur|\bnews\b|rumou?r|\beye\b|\bmoves?\b|reveal|linked|\bbid\b|signing|available|\bsaved the club\b|when the year ends|history|frustration|\bsack|\bexit\b/;
+
 export const CATEGORY_LABELS = {
   review: 'Match review',
   tactical: 'Tactical breakdown',
   stats: 'Stats & data',
   player: 'Player analysis',
-  preview: 'Tactical preview',
+  preview: 'Match preview',
 };
 
 export const TOPIC_RULES = [
@@ -84,6 +87,10 @@ export function analysisVideos({ videos, fixtures, players = [], matchFiles = {}
     if (!signal) continue;
     if (ch.tier === 'official' && !/analys|tactic|explain|breakdown|stats|data|\bxg\b/.test(title)) continue;
     const category = categorise(title, playersIn.length > 0, !!match && Date.parse(match.kickoff) <= pub);
+    const strong = STRONG.test(title);
+    // News, transfer and nostalgia pieces are not analysis unless clearly framed as such.
+    if (NEWSY.test(title) && !strong && category !== 'preview' && category !== 'review') continue;
+    if (category === 'tactical' && !strong) continue;
     const topics = TOPIC_RULES.filter(([, r]) => r.test(both)).map(([l]) => l).slice(0, 4);
     const item = { ...base(v, ch, match), category, categoryLabel: CATEGORY_LABELS[category], topics, players: playersIn.map((p) => ({ id: p.id, name: p.name })) };
     if (match) item.matchStats = matchStats(matchFiles[`matches/${match.id}.json`]);

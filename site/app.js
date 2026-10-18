@@ -227,10 +227,14 @@ AFTER.fixtures = async () => {
 };
 
 // ---------------- Player Lab ----------------
-const LAB_COLS = [
-  ['minutes', 'Min', 0], ['goals', 'G', 0], ['assists', 'A', 0], ['xg', 'xG', 2], ['xa', 'xA', 2], ['shots', 'Shots', 0], ['chancesCreated', 'Chances', 0],
-  ['dribbles', 'Take-ons won', 0], ['passesAcc', 'Acc. passes', 0], ['tacklesWon', 'Tackles won', 0], ['recoveries', 'Recoveries', 0], ['cbi', 'CBI', 0], ['saves', 'Saves', 0],
-];
+// Stats are split into groups so each table fits a phone screen without sideways swiping.
+// A column is [key, label, decimals] or [key, label, decimals, 'rate'] for a success %.
+const LAB_GROUPS = {
+  Attacking: [['goals', 'Goals', 0], ['assists', 'Assists', 0], ['xg', 'xG', 2], ['xa', 'xA', 2], ['shots', 'Shots', 0], ['chancesCreated', 'Chances', 0]],
+  Passing: [['passesAcc', 'Acc. passes', 0], ['passPct', 'Pass %', 1, 'rate'], ['finalThirdPasses', 'Final third', 0], ['crossesAcc', 'Crosses', 0], ['longBallsAcc', 'Long balls', 0], ['touches', 'Touches', 0]],
+  Defending: [['tacklesWon', 'Tackles won', 0], ['tackleWinPct', 'Tackle %', 1, 'rate'], ['interceptions', 'Intercep.', 0], ['recoveries', 'Recov.', 0], ['cbi', 'CBI', 0], ['duelsWon', 'Duels won', 0]],
+  Goalkeeping: [['saves', 'Saves', 0], ['cs', 'Clean sheets', 0], ['gc', 'Conceded', 0], ['xgotFaced', 'xGOT faced', 2], ['goalsPrevented', 'Goals prev.', 2], ['gkPassesAcc', 'Acc. passes', 0]],
+};
 VIEWS.players = async () => {
   const ps = await loadSeason('players.json');
   return `<div class="section-head"><h1>Player Lab</h1><span class="muted small">${esc(state.season.replace('-', '/'))} · tap a column to sort · tap a player for the full profile</span></div>
@@ -241,32 +245,39 @@ VIEWS.players = async () => {
     <select class="ctl" id="f-who" aria-label="Players"><option value="current">Current squad</option><option value="all">Include loans & departures</option></select>
     <a class="btn ghost" href="#/compare">Compare players</a>
   </div>
-  <div class="panel" style="padding:6px"><div class="table-wrap" id="lab-table"></div></div>
+  <div class="tabs lab-tabs" role="group" aria-label="Statistic group" id="lab-group">${Object.keys(LAB_GROUPS).map((g, i) => `<button data-g="${g}" aria-pressed="${i === 0}">${g}</button>`).join('')}</div>
+  <div class="panel" style="padding:6px;margin-top:12px"><div class="table-wrap" id="lab-table"></div></div>
   ${src(`${ps.source}; shots/passing/take-ons/tackles won from FPL Core Insights (FotMob). Per-90 uses minutes from matches where each statistic was recorded`, ps.generatedAt)}`;
 };
 AFTER.players = async () => {
   const ps = await loadSeason('players.json');
+  let group = 'Attacking';
   const draw = () => {
     const pos = document.getElementById('f-pos').value; const comp = document.getElementById('f-comp').value; const mode = document.getElementById('f-mode').value; const who = document.getElementById('f-who').value;
-    const rows = ps.players.filter((p) => (!pos || p.pos === pos) && (who === 'all' ? (p[comp]?.apps || 0) > 0 || p.current || p.membership === 'loan' : p.current));
-    const cols = LAB_COLS.filter(([k]) => (mode === 'per90' ? k !== 'minutes' : true));
-    const cell = (p, k, dp) => {
+    const gkOnly = group === 'Goalkeeping';
+    const rows = ps.players.filter((p) => (!pos || p.pos === pos) && (gkOnly ? p.pos === 'GK' : (pos === 'GK' || p.pos !== 'GK' || group === 'Passing')) && (who === 'all' ? (p[comp]?.apps || 0) > 0 || p.current || p.membership === 'loan' : p.current));
+    const cols = LAB_GROUPS[group];
+    const cell = (p, [k, , dp, kind]) => {
       const s = p[comp];
       if (!s) return '<td class="r" data-v=""><span class="na">—</span></td>';
-      const v = mode === 'per90' && k !== 'minutes' ? s.per90?.[k] : s.totals?.[k];
-      return `<td class="r" data-v="${v ?? ''}" data-label="${esc(k)}">${fmt(v, mode === 'per90' ? 2 : dp)}</td>`;
+      const per = mode === 'per90' && s.per90 && s.per90[k] !== undefined;
+      const v = kind === 'rate' ? s.rates?.[k]?.value ?? null : per ? s.per90[k] : s.totals?.[k];
+      return `<td class="r" data-v="${v ?? ''}">${kind === 'rate' && v !== null ? `${fmt(v, 0)}%` : fmt(v, per ? 2 : dp)}</td>`;
     };
-    document.getElementById('lab-table').innerHTML = `<table data-sortable class="stack"><thead><tr><th class="sortable sticky-col">Player</th><th class="sortable">Pos</th><th class="sortable r">Apps</th>${mode === 'per90' ? '<th class="sortable r">Min</th>' : ''}${cols.map(([, l]) => `<th class="sortable r">${l}</th>`).join('')}</tr></thead>
-      <tbody>${rows.map((p) => `<tr class="clickable" data-href="#/player/${p.id}"><td class="sticky-col" data-v="${esc(p.web)}"><a href="#/player/${p.id}">${esc(p.web)}</a>${p.current ? '' : ` <span class="faint tiny">${esc(p.membershipLabel || 'former')}</span>`}${p.status && p.status !== 'a' ? ` <span class="tiny" style="color:var(--warn)">${esc(p.statusLabel)}</span>` : ''}</td><td data-v="${p.pos}" data-label="Pos">${p.pos}</td><td class="r" data-v="${p[comp]?.apps ?? ''}" data-label="Apps">${p[comp]?.apps ?? 0}</td>${mode === 'per90' ? `<td class="r" data-v="${p[comp]?.totals.minutes ?? ''}" data-label="Min">${p[comp]?.totals.minutes ?? 0}</td>` : ''}${cols.map(([k, , dp]) => cell(p, k, dp)).join('')}</tr>`).join('')}</tbody></table>`;
+    const minCol = (p) => p[comp]?.totals.minutes ?? 0;
+    document.getElementById('lab-table').innerHTML = `<table data-sortable class="lab"><thead><tr><th class="sortable sticky-col">Player</th>${cols.map(([, l]) => `<th class="sortable r">${l}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map((p) => `<tr class="clickable" data-href="#/player/${p.id}"><td class="sticky-col" data-v="${esc(p.web)}"><a href="#/player/${p.id}">${esc(p.web)}</a><span class="sub">${p.pos} · ${p[comp]?.apps ?? 0} apps · ${minCol(p)}′${p.current ? '' : ` · ${esc(p.membershipLabel || 'former')}`}${p.status && p.status !== 'a' ? `<span class="st" style="color:var(--warn)">${esc(p.statusLabel)}</span>` : ''}</span></td>${cols.map((c) => cell(p, c)).join('')}</tr>`).join('')}</tbody></table>
+      ${rows.length ? '' : '<div class="empty">No players match these filters.</div>'}`;
     const t = document.querySelector('#lab-table table');
-    t.querySelectorAll('td[data-label]').forEach((td, i) => { const th = t.tHead.rows[0].cells[td.cellIndex]; if (th) td.dataset.label = th.textContent; void i; });
     sortableTable(t);
     t.addEventListener('click', (e) => { const tr = e.target.closest('tr[data-href]'); if (tr && !e.target.closest('a')) location.hash = tr.dataset.href; });
   };
+  document.getElementById('lab-group').addEventListener('click', (e) => { const b = e.target.closest('[data-g]'); if (!b) return; group = b.dataset.g; document.querySelectorAll('#lab-group button').forEach((x) => x.setAttribute('aria-pressed', x === b)); draw(); });
   ['f-pos', 'f-comp', 'f-mode', 'f-who'].forEach((id) => document.getElementById(id).addEventListener('change', draw));
   draw();
 };
 
+const spDuties = (p) => { const sp = p.setPieces; if (!sp) return ''; return [['penalties', 'Penalties'], ['freeKicks', 'Direct free kicks'], ['corners', 'Corners & indirect free kicks']].filter(([k]) => sp[k]).map(([k, l]) => `${l} <strong>${ordinal(sp[k])} choice</strong>`).join(' · '); };
 VIEWS.player = async (id) => {
   const idx = (state.index ||= (await load('players-index.json')).players).find((p) => p.id === id);
   const data = await loadSeason(`players/${id}.json`, state.season, { optional: true });
@@ -292,6 +303,7 @@ VIEWS.player = async (id) => {
   const un = state.meta.unavailable;
   return `<div class="player-head">${photoHtml(p)}<div><h1 style="margin:0">${esc(p.name)}</h1>
     <div class="facts"><span><strong>${esc(state.meta.posLabels[p.pos])}</strong></span>${p.squadNumber ? `<span>No. <strong>${p.squadNumber}</strong></span>` : ''}${p.age !== null ? `<span>Age <strong>${p.age}</strong>${p.birthDate ? ` (born ${esc(fmtDate(p.birthDate, { day: 'numeric', month: 'short', year: 'numeric' }))})` : ''}</span>` : ''}${p.nationality ? `<span>${esc(p.nationality)}</span>` : ''}${p.joinDate ? `<span>Joined <strong>${esc(fmtDate(p.joinDate, { month: 'short', year: 'numeric' }))}</strong></span>` : ''}<span>${p.current ? 'Current squad' : p.membershipLabel ? `<strong style="color:var(--warn)">${esc(p.membershipLabel)}</strong>${p.membershipNote ? ` — ${esc(p.membershipNote)}` : ''}` : 'Archived season'}</span></div>
+    ${spDuties(p) ? `<p class="small" style="margin:6px 0 0"><span class="muted">Set-piece duties (FPL order):</span> ${spDuties(p)}</p>` : ''}
     ${p.status && p.status !== 'a' ? `<p class="small" style="color:var(--warn);margin:6px 0 0">${esc(p.statusLabel)}${p.news ? ` — ${esc(p.news)}` : ''}${p.chanceNext !== null ? ` (chance of playing next round: ${p.chanceNext}%)` : ''}</p>` : ''}
     ${idx && idx.seasons.length > 1 ? `<p class="small muted" style="margin:6px 0 0">Other seasons: ${idx.seasons.filter((s) => s.season !== state.season).map((s) => `<a href="#" data-season="${s.season}">${s.season.replace('-', '/')}</a>`).join(', ')}</p>` : ''}</div></div>
   <div class="grid four section">
@@ -318,7 +330,7 @@ VIEWS.player = async (id) => {
   <div class="panel section"><h2>Match log</h2><div class="table-wrap"><table data-sortable class="stack"><thead><tr><th class="sortable">Date</th><th>Match</th><th>Comp</th><th class="sortable r">Min</th><th class="sortable r">G</th><th class="sortable r">A</th><th class="sortable r">xG</th><th class="sortable r">xA</th><th class="sortable r">Shots</th><th class="sortable r">Chances</th><th class="sortable r">Recov.</th>${isGK ? '<th class="sortable r">Saves</th>' : ''}</tr></thead><tbody>
     ${matches.slice().reverse().map((m) => `<tr><td data-v="${esc(m.kickoff)}" data-label="Date">${esc(fmtDate(m.kickoff, { day: 'numeric', month: 'short' }))}</td><td data-label="Match"><a href="#/match/${encodeURIComponent(m.matchId)}">${m.home ? 'v' : '@'} ${esc(oppName(m))}</a></td><td data-label="Comp">${esc(m.comp === 'Premier League' ? 'PL' : m.comp)}</td>${['minutes', 'goals', 'assists', 'xg', 'xa', 'shots', 'chancesCreated', 'recoveries', ...(isGK ? ['saves'] : [])].map((k) => `<td class="r" data-v="${m[k] ?? ''}" data-label="${k}">${fmt(m[k], ['xg', 'xa'].includes(k) ? 2 : 0)}</td>`).join('')}</tr>`).join('')}
   </tbody></table></div></div>
-  <div class="panel section flat"><h3>Not available from the free data sources</h3><div class="unavail">${[...un.identity, ...(isGK ? un.goalkeeping : []), 'Carries & progressive carries', 'Progressive passes', 'Pressures'].map((u) => `<span>${esc(u)}</span>`).join('')}${p.season.totals.dribbles === null && !isGK ? '<span>Take-ons (not recorded per player this season)</span>' : ''}</div></div>`;
+  <div class="panel section flat"><h3>Not available from the free data sources</h3><div class="unavail">${[...un.identity, ...(isGK ? un.goalkeeping : [...un.attacking, 'Progressive passes', ...un.defensive])].map((u) => `<span>${esc(u)}</span>`).join('')}${p.season.totals.dribbles === null && !isGK ? '<span>Take-ons (not recorded per player this season)</span>' : ''}</div></div>`;
 };
 let teamNames = null;
 const oppName = (m) => m.opponent || (m.opponentTeamId && teamNames?.get(m.opponentTeamId)) || 'opponent';
@@ -364,6 +376,11 @@ VIEWS.team = async () => {
   const prev = state.seasons.seasons.filter((s) => s < state.season).slice(0, 3);
   const prevTeams = await Promise.all(prev.map((s) => loadSeason('team.json', s, { optional: true })));
   const o = team.overall; const adv = o.adv;
+  const squadPs = (await loadSeason('players.json', state.season, { optional: true }))?.players || [];
+  const spTakers = [['penalties', 'Penalties'], ['freeKicks', 'Direct free kicks'], ['corners', 'Corners & indirect free kicks']].map(([k, l]) => {
+    const list = squadPs.filter((p) => p.current && p.setPieces?.[k]).sort((a, b) => a.setPieces[k] - b.setPieces[k]);
+    return list.length ? `<div class="statrow"><span>${l}</span><span class="small" style="text-align:right">${list.slice(0, 3).map((p, i) => `${i ? '' : '<strong>'}<a href="#/player/${p.id}">${esc(p.web)}</a>${i ? '' : '</strong>'}`).join(' → ')}</span></div>` : '';
+  }).join('');
   const blockRow = (name, b) => `<tr><td class="sticky-col">${name}</td><td class="r">${b.n}</td><td class="r">${b.w}-${b.d}-${b.l}</td><td class="r">${b.n ? (b.points / b.n).toFixed(2) : '—'}</td><td class="r">${b.gf ?? 0}–${b.ga ?? 0}</td><td class="r">${fmt(b.perMatch.xg.value, 2)}</td><td class="r">${fmt(b.perMatch.xga.value, 2)}</td><td class="r">${b.cleanSheets}</td></tr>`;
   const pm = (k) => adv?.perMatch[k];
   return `<h1>Team statistics</h1>
@@ -391,8 +408,9 @@ VIEWS.team = async () => {
       <tr><td>First half</td><td class="r">${adv.halves.first.gf}</td><td class="r">${adv.halves.first.ga}</td><td class="r">${fmtPlain(adv.halves.first.xgf, 2)}</td><td class="r">${fmtPlain(adv.halves.first.xga, 2)}</td></tr>
       <tr><td>Second half</td><td class="r">${adv.halves.second.gf}</td><td class="r">${adv.halves.second.ga}</td><td class="r">${fmtPlain(adv.halves.second.xgf, 2)}</td><td class="r">${fmtPlain(adv.halves.second.xga, 2)}</td></tr></tbody></table></div><p class="source">From shot-level data in ${adv.halves.n} matches; own goals are not shots and are excluded.</p>` : '<p class="na">No shot data yet.</p>'}
     <h2 style="margin-top:18px">By situation</h2>${situationTable(adv.situations)}</div></div>` : '<div class="banner info section">Possession, shots and passing appear here once the supplementary match source has data for this season.</div>'}
-  <div class="panel section"><h2>Defensive actions per match (FPL)</h2><div class="statlist">${['tackles', 'cbi', 'recoveries', 'defcon', 'saves', 'yc'].map((k) => `<div class="statrow"><span>${esc({ tackles: 'Tackles', cbi: 'Clearances, blocks & interceptions', recoveries: 'Recoveries', defcon: 'Defensive contribution', saves: 'Saves', yc: 'Yellow cards' }[k])}</span><span class="v">${fmt(o.perMatch[k].value, 1)}</span></div>`).join('')}</div>
-    <p class="source">Not available free: ${esc(state.meta.unavailable.team.filter((x) => !/Possession|Shots|Pass accuracy|Big chances|Set-piece|First\/second/.test(x)).join(', '))}.</p></div>`;
+  ${spTakers ? `<div class="panel section"><h2>Set-piece takers</h2><div class="statlist">${spTakers}</div><p class="source">Fantasy Premier League's published set-piece order for current players (1st = first choice). Retrieved ${esc(fmtDateTime(team.generatedAt))}.</p></div>` : ''}
+  <div class="panel section"><h2>Defensive actions per match (FPL)</h2><div class="statlist">${['tackles', 'cbi', 'recoveries', 'defcon', 'saves', 'yc'].map((k) => { const r = team.fplRanks?.metrics?.[k]; return `<div class="statrow"><span>${esc({ tackles: 'Tackles', cbi: 'Clearances, blocks & interceptions', recoveries: 'Recoveries', defcon: 'Defensive contribution', saves: 'Saves', yc: 'Yellow cards' }[k])}${r ? `<span class="lrank">League avg ${fmt(r.leagueAvg, 1)} · most: ${esc(r.leader.team)} ${fmt(r.leader.value, 1)}</span>` : ''}</span><span class="v">${fmt(o.perMatch[k].value, 1)}${r ? `<span class="rk-chip">${ordinal(r.rank)} of ${r.of}</span>` : ''}</span></div>`; }).join('')}</div>${team.fplRanks?.metrics && Object.keys(team.fplRanks.metrics).length ? `<p class="tiny faint">${esc(team.fplRanks.basis)} A high rank is not always good: more saves or clearances can mean more pressure faced, and more yellow cards is worse.</p>` : ''}
+    <p class="source">Not available free: ${esc(state.meta.unavailable.team.join(', '))}.</p></div>`;
 };
 function tacticalReading(team) {
   const m = team.leagueRanks?.metrics || {};
@@ -852,7 +870,8 @@ VIEWS.sources = async () => {
   </div>
   <div class="panel section"><h2>Statistics: what is and isn't available</h2>
     <p class="small muted">Available (with source):</p><div class="unavail" style="margin-bottom:12px">${m.statDefs.map((d) => `<span style="border-style:solid;color:var(--text)">${esc(d.label)} <span class="faint">${d.src === 'fplcore' ? 'FotMob' : 'FPL'}</span></span>`).join('')}</div>
-    <p class="small muted">Not available from any free source:</p><div class="unavail">${Object.values(m.unavailable).flat().filter((x, i, a) => a.indexOf(x) === i).map((u) => `<span>${esc(u)}</span>`).join('')}</div>
+    ${m.nowAvailable ? `<p class="small muted">Collected and where to find it:</p><div class="statlist one">${m.nowAvailable.map(([what, where]) => `<div class="statrow"><span>${esc(what)}</span><span class="small muted" style="text-align:right">${esc(where)}</span></div>`).join('')}</div>` : ''}
+    <p class="small muted" style="margin-top:14px">Still not available from any free source:</p><div class="unavail">${Object.values(m.unavailable).flat().filter((x, i, a) => a.indexOf(x) === i).map((u) => `<span>${esc(u)}</span>`).join('')}</div>
     <p class="source">Shots, passing, take-ons, possession and shot locations come from the FPL Core Insights community dataset, whose maintainer allows free use with a link back; its match statistics are collected from FotMob. Individual take-ons are not recorded by that source in 2026/27 (team totals are). A blank count for a player who featured is treated as zero only when the column was recorded for that match; otherwise it is shown as unavailable.</p></div>
   <div class="panel section"><h2>Settings</h2>
     <div class="filters"><label for="theme" class="small">Appearance</label><select class="ctl" id="theme"><option value="">Navy (default)</option><option value="light">Light</option></select></div>

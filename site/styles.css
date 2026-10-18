@@ -313,3 +313,28 @@ select.ctl, input.ctl { background: var(--panel); border: 1px solid var(--line);
 .tl-row.opp .tl-dot.goal { background: var(--loss); border-color: var(--loss); box-shadow: none; }
 .tl-dot.big-chance { border-color: var(--draw); }
 .tl-dot.woodwork { border-color: var(--muted); border-style: dashed; }
+
+/* League rank chips (team defensive panel) */
+.lrank { display: block; font-size: 0.74rem; color: var(--faint); margin-top: 2px; }
+.rk-chip { display: inline-block; margin-left: 8px; font-family: var(--display); font-size: 0.72rem; font-weight: 600; padding: 2px 7px; border-radius: 4px; background: var(--bg-2); color: var(--muted); border: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+.statrow .v:has(.rk-chip) { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.statrow .v .rk-chip { margin-left: 0; color: var(--cyan); }
+
+/* Player Lab: one stat group at a time so the table fits a phone */
+.lab-tabs { margin-top: 4px; }
+table.lab { font-size: 0.88rem; }
+table.lab td, table.lab th { padding: 9px 7px; }
+table.lab th { font-size: 0.72rem; white-space: normal; line-height: 1.2; vertical-align: bottom; }
+table.lab td.sticky-col a { font-weight: 600; }
+table.lab .sub { display: block; font-size: 0.7rem; color: var(--faint); margin-top: 2px; white-space: normal; }
+table.lab .sub .st { display: block; }
+@media (max-width: 640px) {
+  .lab-tabs { width: 100%; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .lab-tabs button { padding: 7px 2px; font-size: 0.78rem; min-width: 0; }
+  table.lab td.sticky-col { width: 92px; max-width: 92px; }
+  table.lab td.sticky-col a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table.lab td.r { white-space: nowrap; }
+  table.lab { font-size: 0.8rem; }
+  table.lab td, table.lab th { padding: 8px 4px; }
+  table.lab th { font-size: 0.64rem; }
+}

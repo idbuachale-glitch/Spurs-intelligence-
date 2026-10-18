@@ -104,10 +104,13 @@ test('video room keeps only Spurs analysis; highlights go to the match page', ()
     v('g', 'lwos', 'Spurs 2-1 Coventry | Post Match Analysis', '2026-10-19T22:30:00Z'),
     v('h', 'athletic', 'Tottenham by the numbers: xG, field tilt and the 3-2-5', '2026-10-05T10:00:00Z'),
     v('i', 'sky', 'Spurs fans react #shorts'),
+    v('j', 'lwos', 'Van De Ven AVAILABLE • Spurs EYE Alvarez MOVES • Conte FRUSTRATION Revealed'),
+    v('k', 'lwos', 'WHEN The YEAR Ends In ONE • HOW Tottenham Hotspur WINNING The FA Cup SAVED The Club!'),
+    v('l', 'lwos', 'De Zerbi PRESSURE • Savio INJURY Setback • Coventry PREVIEW', '2026-10-17T10:00:00Z'),
   ];
   const { items, highlights } = analysisVideos({ videos, fixtures: fx, players, channels });
   const byId = Object.fromEntries(items.map((i) => [i.videoId[0], i]));
-  assert.deepEqual(Object.keys(byId).sort(), ['d', 'f', 'g', 'h']);
+  assert.deepEqual(Object.keys(byId).sort(), ['d', 'f', 'g', 'h', 'l']); assert.equal(byId.l.category, 'preview');
   assert.equal(highlights.length, 1); assert.equal(highlights[0].matchId, 'pl-1');
   assert.equal(byId.d.matchId, 'pl-1'); assert.equal(byId.d.category, 'review'); assert.ok(byId.d.topics.includes('Pressing & counter-press'));
   assert.equal(byId.f.category, 'player'); assert.deepEqual(byId.f.players.map((p) => p.id), ['p1']); assert.equal(byId.f.matchId, null);

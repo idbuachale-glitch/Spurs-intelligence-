@@ -84,6 +84,7 @@ export const PLAYER_FIELDS = {
   dispossessed: 'dispossessed', offsides: 'offsides', corners: 'corners',
   gkSaves: 'saves', xgotFaced: 'xgot_faced', goalsPrevented: 'goals_prevented', sweeperActions: 'sweeper_actions', highClaims: 'high_claim', savesInBox: 'saves_inside_box',
   penScored: 'penalties_scored', distance: 'distance_covered', sprints: 'number_of_sprints',
+  groundDuelsWon: 'ground_duels_won', headedClearances: 'headed_clearances', gkPassesAcc: 'gk_accurate_passes', gkLongBallsAcc: 'gk_accurate_long_balls',
 };
 
 // Columns that hold at least one value for a player who featured in this match. A
