@@ -47,8 +47,16 @@ export function parseCsv(text) {
 // Fetch one tournament-gameweek folder, keeping only matches involving the club.
 export async function fetchRound(season, tournament, gw, clubCode, clubSlug = 'tottenham-hotspur') {
   const base = `data/${seasonDir(season)}/By Tournament/${tournament}/${gw}`;
-  const matches = (await fetchCsv(`${base}/matches.csv`)).filter((m) => num(m.home_team) === clubCode || num(m.away_team) === clubCode || String(m.match_id).includes(clubSlug));
-  if (!matches.length) return { matches: [], players: [], shots: [], momentum: [], xgMinute: [] };
+  const allMatches = await fetchCsv(`${base}/matches.csv`);
+  const matches = allMatches.filter((m) => num(m.home_team) === clubCode || num(m.away_team) === clubCode || String(m.match_id).includes(clubSlug));
+  // Team-level stats for every league match in the round, for league rankings.
+  const leagueMatches = tournament === 'Premier League'
+    ? allMatches.filter((m) => m.finished === 'True' && m.stats_processed === 'True').map((m) => {
+      const o = { match_id: m.match_id, home_team: m.home_team, away_team: m.away_team, home_score: m.home_score, away_score: m.away_score };
+      for (const f of Object.values(TEAM_FIELDS)) { o[`home_${f}`] = m[`home_${f}`]; o[`away_${f}`] = m[`away_${f}`]; }
+      return o;
+    }) : [];
+  if (!matches.length) return { matches: [], players: [], shots: [], momentum: [], xgMinute: [], leagueMatches };
   const ids = new Set(matches.map((m) => m.match_id));
   const anyProcessed = matches.some((m) => m.player_stats_processed === 'True');
   const statsDone = matches.some((m) => m.stats_processed === 'True');
@@ -59,7 +67,7 @@ export async function fetchRound(season, tournament, gw, clubCode, clubSlug = 't
     statsDone ? fetchCsv(`${base}/xg_by_minute.csv`).catch(() => []) : [],
   ]);
   const mine = (rows) => rows.filter((r) => ids.has(r.match_id));
-  return { matches, players: mine(players), shots: mine(shots), momentum: mine(momentum), xgMinute: mine(xgMinute) };
+  return { matches, players: mine(players), shots: mine(shots), momentum: mine(momentum), xgMinute: mine(xgMinute), leagueMatches };
 }
 
 // ---------- Normalisation ----------

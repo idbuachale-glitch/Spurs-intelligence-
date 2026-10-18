@@ -151,12 +151,12 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
   } else {
     status.sources.fplcore = { label: fc.label, disabled: true, note: 'Disabled (SUPPLEMENTARY_STATS=off). Shots, passing, take-ons, duels and cup player stats are hidden.' };
   }
-  const detail = { matches: [], players: [], shots: [], momentum: [], xgMinute: [] };
+  const detail = { matches: [], players: [], shots: [], momentum: [], xgMinute: [], leagueMatches: [] };
   if (fc.enabled()) for (const f of listFiles(fcDir)) {
     const r = readJson(path.join(fcDir, f));
     if (!r) continue;
     for (const m of r.matches) detail.matches.push({ tournament: r.tournament, gw: r.gw, row: m });
-    detail.players.push(...r.players); detail.shots.push(...r.shots); detail.momentum.push(...(r.momentum || [])); detail.xgMinute.push(...(r.xgMinute || []));
+    detail.players.push(...r.players); detail.shots.push(...r.shots); detail.momentum.push(...(r.momentum || [])); detail.xgMinute.push(...(r.xgMinute || [])); detail.leagueMatches.push(...(r.leagueMatches || []));
   }
 
   // ---------------- Other competitions (TheSportsDB) ----------------

@@ -47,7 +47,7 @@ export function buildSeason(input) {
   const {
     season, generatedAt, isCurrent = false, teams, spursId, fplFixtures, elements, histories,
     cupMatches = [], prevFixtures = [], videos = [], regions = new Map(), aliases = {}, sourceRef,
-    detail = { matches: [], players: [], shots: [], momentum: [], xgMinute: [] }, clubCode = null, spursElementIds = new Set(),
+    detail = { matches: [], players: [], shots: [], momentum: [], xgMinute: [], leagueMatches: [] }, clubCode = null, spursElementIds = new Set(),
   } = input;
   const teamById = new Map(teams.map((t) => [t.id, t]));
   const nameOf = (id) => { const e = elements.get(id); return e ? (e.web_name || `${e.first_name} ${e.second_name}`) : `Player ${id}`; };
@@ -285,6 +285,8 @@ export function buildSeason(input) {
 
   // ---- Team intelligence ----
   const teamSummary = summariseTeam(teamMatches, fixtures);
+  teamSummary.leagueRanks = leagueAdvancedRanks(detail.leagueMatches || [], teams, clubCode);
+  teamSummary.shotZones = shotZones(Object.values(matchFiles).filter((m) => m.fixture.competition === 'Premier League' && m.detail).flatMap((m) => m.detail.shots));
 
   // ---- Video evidence linking ----
   const evidence = linkVideos(videos, fixtures);
@@ -435,6 +437,57 @@ export function summariseTeam(matches, fixtures) {
     byCompetition: byComp,
     formAllComps: allComps.slice(-10).map((f) => ({ matchId: f.id, result: f.result, competition: f.competition, opponent: f.opponent })),
   };
+}
+
+// League-wide per-match averages for each club from the supplementary match data,
+// ranked so a Spurs figure can be shown with its league position.
+export function leagueAdvancedRanks(rows, teams, clubCode) {
+  const seen = new Set(); const by = new Map();
+  for (const m of rows) {
+    if (seen.has(m.match_id)) continue; seen.add(m.match_id);
+    for (const [side, other] of [['home', 'away'], ['away', 'home']]) {
+      const code = num(m[`${side}_team`]); if (code === null) continue;
+      const t = by.get(code) || { code, n: 0, sums: {}, counts: {} };
+      const add = (k, v) => { if (v === null) return; t.sums[k] = (t.sums[k] || 0) + v; t.counts[k] = (t.counts[k] || 0) + 1; };
+      t.n++;
+      add('possession', num(m[`${side}_possession`])); add('shots', num(m[`${side}_total_shots`])); add('sot', num(m[`${side}_shots_on_target`]));
+      add('xg', num(m[`${side}_expected_goals_xg`])); add('xga', num(m[`${other}_expected_goals_xg`])); add('bigChances', num(m[`${side}_big_chances`]));
+      add('shotsAgainst', num(m[`${other}_total_shots`])); add('passPct', num(m[`${side}_accurate_passes_pct`])); add('touchesOppBox', num(m[`${side}_touches_in_opposition_box`]));
+      const a = num(m[`${side}_opposition_half`]); const b = num(m[`${other}_opposition_half`]);
+      add('fieldTilt', a !== null && b !== null && a + b > 0 ? (a / (a + b)) * 100 : null);
+      add('dribbles', num(m[`${side}_successful_dribbles`])); add('xgSetPlay', num(m[`${side}_xg_set_play`]));
+      by.set(code, t);
+    }
+  }
+  const defs = { possession: ['Possession', '%', false], fieldTilt: ['Field tilt', '%', false], shots: ['Shots per match', '', false], sot: ['Shots on target per match', '', false],
+    xg: ['xG per match', '', false], bigChances: ['Big chances per match', '', false], touchesOppBox: ['Touches in opposition box', '', false], passPct: ['Pass accuracy', '%', false],
+    dribbles: ['Successful take-ons per match', '', false], xgSetPlay: ['Set-piece xG per match', '', false], xga: ['xG conceded per match', '', true], shotsAgainst: ['Shots conceded per match', '', true] };
+  const teamByCode = new Map(teams.map((t) => [Number(t.code), t]));
+  const out = {};
+  for (const [k, [label, unit, lowerBetter]] of Object.entries(defs)) {
+    const list = [...by.values()].filter((t) => t.counts[k]).map((t) => ({ code: t.code, value: t.sums[k] / t.counts[k], n: t.counts[k] }));
+    if (list.length < 10) continue;
+    list.sort((x, y) => (lowerBetter ? x.value - y.value : y.value - x.value));
+    const i = list.findIndex((t) => t.code === clubCode);
+    if (i < 0) continue;
+    const avg = list.reduce((s, t) => s + t.value, 0) / list.length;
+    out[k] = { label, unit, lowerBetter, value: round(list[i].value, 2), rank: i + 1, of: list.length, leagueAvg: round(avg, 2), leader: { team: teamByCode.get(list[0].code)?.name || null, value: round(list[0].value, 2) }, matches: list[i].n };
+  }
+  return { metrics: out, source: 'FPL Core Insights (FotMob match data), all Premier League matches in rounds where Spurs have played' };
+}
+
+// Spurs shots by pitch zone (measured from shot coordinates).
+export function shotZones(shots) {
+  const zones = {};
+  for (const s of shots) {
+    if (s.team !== 'spurs' || s.x === null || s.y === null) continue;
+    const depth = s.x <= 5.5 ? 'six' : s.x <= 16.5 ? 'box' : 'outside';
+    const lane = depth === 'outside' ? (s.y < 33 ? 'left' : s.y > 67 ? 'right' : 'centre') : (s.y < 36 ? 'left' : s.y > 64 ? 'right' : 'centre');
+    const k = `${depth}-${lane}`;
+    const z = (zones[k] ||= { shots: 0, goals: 0, xg: 0 });
+    z.shots++; z.xg = round(z.xg + (s.xg || 0), 2); if (s.outcome === 'goal') z.goals++;
+  }
+  return zones;
 }
 
 function advancedBlock(rows) {

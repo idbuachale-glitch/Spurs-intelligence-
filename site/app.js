@@ -1,5 +1,5 @@
 import { state, load, loadSeason, esc, fmt, fmtPlain, fmtDate, fmtTime, fmtDateTime, ago, statusText, resultChip, photoHtml, norm, sortableTable } from './lib.js';
-import { lineChart, pairBars, shotMap, barList, xgRace, momentumChart } from './charts.js';
+import { lineChart, pairBars, shotMap, barList, xgRace, momentumChart, shotZonePitch, conceptPitch } from './charts.js';
 import { answer, renderAnswer, suggestions } from './analyst.js';
 
 const NAV = [
@@ -154,6 +154,7 @@ VIEWS.overview = async () => {
     <div class="panel stat-tile"><span class="lbl">Premier League record</span><span class="big">${o.w}-${o.d}-${o.l}</span><span class="small muted">${o.gf} scored, ${o.ga} conceded</span></div>
     <div class="panel stat-tile"><span class="lbl">xG for / against</span><span class="big">${fmtPlain(o.xg, 1)} / ${fmtPlain(o.xga, 1)}</span><span class="small muted">${o.xgMatches} matches with xG</span></div>
   </div>
+  ${team.leagueRanks?.metrics?.possession ? `<section class="section"><div class="section-head"><h2>Against the league</h2><a class="small" href="#/team">All rankings</a></div>${rankTiles(team.leagueRanks, ['possession', 'fieldTilt', 'xg', 'xga'])}</section>` : ''}
   <div class="grid two section">
     <div class="panel"><h2>Recent form</h2><div class="form-strip">${team.formAllComps.map((f) => `<a href="#/match/${encodeURIComponent(f.matchId)}" title="${esc(f.opponent)} (${esc(f.competition)})">${resultChip(f.result)}</a>`).join('') || '<span class="na">No matches yet</span>'}</div>
       <p class="small muted" style="margin-top:10px">Last ${team.formAllComps.length} competitive matches, oldest first. Last five PL: ${team.last5.w}W ${team.last5.d}D ${team.last5.l}L.</p>
@@ -182,6 +183,18 @@ AFTER.overview = () => {
   };
   tick(); clearInterval(window.__cd); window.__cd = setInterval(tick, 30000);
 };
+function rankTiles(ranks, keys) {
+  if (!ranks || !ranks.metrics) return '';
+  const tiles = keys.map((k) => ranks.metrics[k] && [k, ranks.metrics[k]]).filter(Boolean);
+  if (!tiles.length) return '';
+  return `<div class="rank-grid">${tiles.map(([, m]) => {
+    const cls = m.rank <= 5 ? 'good' : m.rank >= 16 ? 'bad' : '';
+    const fill = ((m.of - m.rank) / (m.of - 1)) * 100;
+    return `<div class="rank-tile ${cls}"><div class="val">${fmtPlain(m.value, m.unit === '%' ? 1 : 2)}${m.unit}</div><div class="lbl">${esc(m.label)}</div>
+      <div class="ctx"><span class="rk">${ordinal(m.rank)} of ${m.of}</span> · league average ${fmtPlain(m.leagueAvg, m.unit === '%' ? 1 : 2)}${m.unit}${m.rank === 1 ? '' : ` · best: ${esc(m.leader.team)} ${fmtPlain(m.leader.value, m.unit === '%' ? 1 : 2)}${m.unit}`}</div>
+      <div class="meter" style="width:${fill.toFixed(0)}%"></div></div>`;
+  }).join('')}</div>`;
+}
 const ordinal = (n) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
 const insightHtml = (i) => `<div class="insight"><h3>${esc(i.title)}</h3><p>${esc(i.text)}</p>${i.interpretation ? `<p class="interp">Interpretation: ${esc(i.interpretation)}</p>` : ''}<p class="tiny faint">${esc(i.category)} · Sample: ${esc(i.sample)}${i.note ? ` · ${esc(i.note)}` : ''} · ${i.type === 'observed' ? 'Observed data' : 'Calculated'}</p></div>`;
 
@@ -341,6 +354,9 @@ VIEWS.team = async () => {
   const blockRow = (name, b) => `<tr><td class="sticky-col">${name}</td><td class="r">${b.n}</td><td class="r">${b.w}-${b.d}-${b.l}</td><td class="r">${b.n ? (b.points / b.n).toFixed(2) : '—'}</td><td class="r">${b.gf ?? 0}–${b.ga ?? 0}</td><td class="r">${fmt(b.perMatch.xg.value, 2)}</td><td class="r">${fmt(b.perMatch.xga.value, 2)}</td><td class="r">${b.cleanSheets}</td></tr>`;
   const pm = (k) => adv?.perMatch[k];
   return `<h1>Team statistics</h1>
+  ${team.leagueRanks && Object.keys(team.leagueRanks.metrics || {}).length ? `<section style="margin-bottom:22px"><div class="section-head"><h2>Where Spurs rank</h2><span class="muted small">Per-match averages, all 20 clubs</span></div>
+    ${rankTiles(team.leagueRanks, ['possession', 'fieldTilt', 'passPct', 'touchesOppBox', 'shots', 'sot', 'xg', 'bigChances', 'dribbles', 'xgSetPlay', 'xga', 'shotsAgainst'])}
+    <p class="source">${esc(team.leagueRanks.source)}. Bar length = league position (longer is better). FotMob xG here; elsewhere the site uses FPL/Opta xG.</p></section>` : ''}
   <div class="panel"><h2>Premier League record by split</h2><div class="table-wrap"><table class="stack"><thead><tr><th class="sticky-col">Split</th><th class="r">P</th><th class="r">W-D-L</th><th class="r">Pts/game</th><th class="r">Goals</th><th class="r">xG/game</th><th class="r">xGA/game</th><th class="r">Clean sheets</th></tr></thead><tbody>
     ${blockRow('Season', o)}${blockRow('Home', team.home)}${blockRow('Away', team.away)}${blockRow('Last 5', team.last5)}${blockRow('Last 10', team.last10)}
     ${prevTeams.map((t, i) => (t ? blockRow(`${prev[i].replace('-', '/')} season`, t.overall) : '')).join('')}</tbody></table></div>
@@ -365,6 +381,21 @@ VIEWS.team = async () => {
   <div class="panel section"><h2>Defensive actions per match (FPL)</h2><div class="statlist">${['tackles', 'cbi', 'recoveries', 'defcon', 'saves', 'yc'].map((k) => `<div class="statrow"><span>${esc({ tackles: 'Tackles', cbi: 'Clearances, blocks & interceptions', recoveries: 'Recoveries', defcon: 'Defensive contribution', saves: 'Saves', yc: 'Yellow cards' }[k])}</span><span class="v">${fmt(o.perMatch[k].value, 1)}</span></div>`).join('')}</div>
     <p class="source">Not available free: ${esc(state.meta.unavailable.team.filter((x) => !/Possession|Shots|Pass accuracy|Big chances|Set-piece|First\/second/.test(x)).join(', '))}.</p></div>`;
 };
+function tacticalReading(team) {
+  const m = team.leagueRanks?.metrics || {};
+  const out = [];
+  if (m.possession && m.xg) {
+    if (m.possession.rank <= 6 && m.xg.rank >= 13) out.push(`Spurs keep the ball (${ordinal(m.possession.rank)} for possession, ${ordinal(m.passPct?.rank ?? 0)} for pass accuracy) but turn it into little chance quality (${ordinal(m.xg.rank)} for xG per match). The build-up is working; the final third is not.`);
+    else if (m.possession.rank <= 6) out.push(`Spurs dominate the ball (${ordinal(m.possession.rank)} for possession) and that is producing chances (${ordinal(m.xg.rank)} for xG).`);
+    else out.push(`Spurs are ${ordinal(m.possession.rank)} for possession and ${ordinal(m.xg.rank)} for xG per match.`);
+  }
+  if (m.fieldTilt) out.push(`Field tilt of ${fmtPlain(m.fieldTilt.value, 1)}% (${ordinal(m.fieldTilt.rank)}) means most of the passing happens in the opposition half.`);
+  if (m.sot && m.shots) out.push(`${fmtPlain(m.shots.value, 1)} shots per match (${ordinal(m.shots.rank)}) but only ${fmtPlain(m.sot.value, 1)} on target (${ordinal(m.sot.rank)}), which points to low-quality or blocked attempts.`);
+  if (m.dribbles) out.push(`${ordinal(m.dribbles.rank)} for successful take-ons (${fmtPlain(m.dribbles.value, 1)} per match).`);
+  if (m.xga) out.push(`Defensively, ${ordinal(m.xga.rank)} for xG conceded per match (${fmtPlain(m.xga.value, 2)}).`);
+  return out.length ? `${out.map((t) => `<p>${esc(t)}</p>`).join('')}<p><span class="label-analysis">Calculated analysis</span> <span class="tiny faint">Generated by fixed rules from the league rankings above.</span></p>` : '<p class="na">Not enough match data yet.</p>';
+}
+
 const SIT = { regular: 'Open play (regular)', assisted: 'Open play (assisted)', 'fast-break': 'Fast break', 'set-piece': 'Set piece', corner: 'Corner', 'free-kick': 'Direct free kick', penalty: 'Penalty', 'throw-in-set-piece': 'Throw-in set piece', unknown: 'Unknown' };
 function situationTable(s) {
   if (!s || !Object.keys(s).length) return '<p class="na">No shot data yet.</p>';
@@ -379,9 +410,23 @@ VIEWS.tactics = async () => {
   const dz = t.deZerbi;
   return `<div class="section-head"><h1>Tactical analysis: De Zerbi's Tottenham</h1><span class="label-analysis">Calculated analysis</span></div>
   <p class="muted">Head coach: ${esc(state.meta.headCoach || 'unknown')}. Everything below is generated by fixed rules from the stored match data. Measured evidence is kept separate from interpretation, and areas the data cannot measure are listed as such.</p>
-  <div class="panel section"><h2>Coach comparison (Premier League)</h2><div class="table-wrap"><table class="stack"><thead><tr><th class="sticky-col">Coach</th><th class="r">Matches</th><th class="r">Pts/game</th><th class="r">Goals/game</th><th class="r">Conceded/game</th><th class="r">xG/game</th><th class="r">xGA/game</th><th class="r">Tackles + CBI</th></tr></thead><tbody>
+  <div class="panel section"><h2>Coach comparison (Premier League)</h2><div class="table-wrap"><table><thead><tr><th class="sticky-col">Coach</th><th class="r">Matches</th><th class="r">Pts/game</th><th class="r">Goals/game</th><th class="r">Conceded/game</th><th class="r">xG/game</th><th class="r">xGA/game</th><th class="r">Tackles + CBI</th></tr></thead><tbody>
     ${t.eras.map((e) => `<tr class="${e.coach === 'Roberto De Zerbi' ? 'hl' : ''}"><td class="sticky-col" data-label="Coach">${esc(e.coach)}</td><td class="r" data-label="Matches">${e.matches}</td><td class="r" data-label="Pts/game">${fmt(e.ppg, 2)}</td><td class="r" data-label="Goals/game">${fmt(e.gfPer, 2)}</td><td class="r" data-label="Conceded/game">${fmt(e.gaPer, 2)}</td><td class="r" data-label="xG/game">${fmt(e.xgPer, 2)}</td><td class="r" data-label="xGA/game">${fmt(e.xgaPer, 2)}</td><td class="r" data-label="Tackles + CBI">${fmt(e.defActionsPer, 1)}</td></tr>`).join('')}</tbody></table></div>
     <p class="source">Stored seasons from 2020/21. Small samples (fewer than ~10 matches) are unreliable.</p></div>
+  ${team.leagueRanks?.metrics?.possession ? `<section class="section"><div class="section-head"><h2>De Zerbi's game in numbers</h2><span class="label-observed">Measured</span></div>
+    ${rankTiles(team.leagueRanks, ['possession', 'passPct', 'fieldTilt', 'xg', 'sot', 'dribbles'])}</section>` : ''}
+  <div class="grid two section">
+    <div class="panel"><div class="section-head"><h2>Where Spurs shoot from</h2><span class="label-observed">Measured</span></div>${shotZonePitch(team.shotZones)}<p class="small muted">Zones shaded by total xG; numbers show xG, shots and goals. Premier League, this season.</p><p class="source">Shot coordinates from FotMob via FPL Core Insights.</p></div>
+    <div class="panel"><div class="section-head"><h2>Drawing the press</h2><span class="illustrative">Illustrative</span></div>${conceptPitch('buildup')}
+      <p class="small">The idea behind De Zerbi's build-up: the goalkeeper and centre-backs invite the opposition press, then pass past it to the free player beyond (cyan). The risk is losing the ball close to goal.</p>
+      <p class="tiny faint">A hand-drawn explanation of the coaching idea, not Tottenham's measured positions from any match. Free data has no player positions.</p></div>
+  </div>
+  <div class="grid two section">
+    <div class="panel"><div class="section-head"><h2>3-2-5 in possession</h2><span class="illustrative">Illustrative</span></div>${conceptPitch('325')}
+      <p class="small">A common shape for De Zerbi's teams on the ball: three at the back and two midfielders guard against counter-attacks while five players occupy the attacking lanes.</p>
+      <p class="tiny faint">Concept diagram, not a measured Tottenham formation.</p></div>
+    <div class="panel"><h2>What the measured numbers say about it</h2>${tacticalReading(team)}</div>
+  </div>
   <div class="panel section"><h2>Under De Zerbi: rolling five-match xG</h2>${lineChart({ labels: dz.rolling.map((r) => r.opponent), series: [{ name: 'xG for (5-match avg)', color: 'var(--cyan)', values: dz.rolling.map((r) => r.xg5) }, { name: 'xG against (5-match avg)', color: 'var(--loss)', values: dz.rolling.map((r) => r.xga5) }], format: (v) => v.toFixed(2) })}<p class="source">${dz.matches} PL matches since April 2026.</p></div>
   <section class="section panel"><h2>Findings</h2>${a.insights.map(insightHtml).join('') || '<p class="na">Not enough matches yet.</p>'}</section>
   ${team.overall.adv ? `<div class="grid two section"><div class="panel"><h2>Where the shots come from</h2>${situationTable(team.overall.adv.situations)}<p class="source">Set-piece and open-play outcomes from shot-level data (FPL Core Insights / FotMob).</p></div><div class="panel"><h2>Season shot map</h2><p class="small muted">Spurs shots, PL. Hover a circle for details.</p><div id="season-shots"><div class="skeleton" style="height:240px"></div></div></div></div>` : ''}

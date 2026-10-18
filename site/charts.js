@@ -1,29 +1,45 @@
 // Small dependency-free SVG charts.
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// Multi-series line chart. series: [{ name, color, values: [number|null], dash? }], labels: [string]
-export function lineChart({ series, labels, height = 220, yLabel = '', format = (v) => v.toFixed(1) }) {
-  const W = 640; const H = height; const pad = { l: 38, r: 12, t: 12, b: 34 };
+// Multi-series line chart with smooth curves, a soft area under the first series,
+// glowing lines and a headline readout of the latest values.
+export function lineChart({ series, labels, height = 230, yLabel = '', format = (v) => v.toFixed(1), readout = true }) {
+  const W = 640; const H = height; const pad = { l: 40, r: 16, t: 14, b: 34 };
   const all = series.flatMap((s) => s.values).filter((v) => v !== null && v !== undefined);
   if (!all.length || labels.length < 2) return '<div class="empty small">Not enough matches to chart yet.</div>';
-  const max = Math.max(...all) * 1.1 || 1; const min = Math.min(0, ...all);
+  const max = Math.max(...all) * 1.12 || 1; const min = Math.min(0, ...all);
   const x = (i) => pad.l + (i / (labels.length - 1)) * (W - pad.l - pad.r);
   const y = (v) => pad.t + (1 - (v - min) / (max - min)) * (H - pad.t - pad.b);
-  const ticks = 4;
-  let g = '';
-  for (let i = 0; i <= ticks; i++) {
-    const v = min + ((max - min) * i) / ticks;
-    g += `<line class="axis" x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="${i ? '2 4' : ''}"/><text x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${esc(format(v))}</text>`;
+  const uid = Math.random().toString(36).slice(2, 8);
+  let g = `<defs><filter id="gl${uid}" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <linearGradient id="ar${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${series[0].color}" stop-opacity="0.28"/><stop offset="1" stop-color="${series[0].color}" stop-opacity="0"/></linearGradient></defs>`;
+  for (let i = 0; i <= 4; i++) {
+    const v = min + ((max - min) * i) / 4;
+    g += `<line class="axis" x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 5" stroke-opacity="${i ? 0.8 : 1}"/><text x="${pad.l - 8}" y="${y(v) + 4}" text-anchor="end">${esc(format(v))}</text>`;
   }
-  const every = Math.ceil(labels.length / 10);
+  const every = Math.ceil(labels.length / 8);
   labels.forEach((l, i) => { if (i % every === 0 || i === labels.length - 1) g += `<text x="${x(i)}" y="${H - 12}" text-anchor="middle">${esc(l)}</text>`; });
-  for (const s of series) {
-    let d = ''; let pen = false;
-    s.values.forEach((v, i) => { if (v === null || v === undefined) { pen = false; return; } d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
-    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linejoin="round" ${s.dash ? 'stroke-dasharray="5 5"' : ''}/>`;
-    s.values.forEach((v, i) => { if (v !== null && v !== undefined && !s.dash) g += `<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="${s.color}"><title>${esc(labels[i])}: ${esc(format(v))}</title></circle>`; });
-  }
-  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(yLabel)}">${g}</svg>
+  const smooth = (pts) => {
+    if (pts.length < 2) return '';
+    let d = `M${pts[0][0]},${pts[0][1]}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i]; const p1 = pts[i]; const p2 = pts[i + 1]; const p3 = pts[i + 2] || p2;
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6]; const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+      d += `C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+    }
+    return d;
+  };
+  series.forEach((s, si) => {
+    const pts = s.values.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)])).filter(Boolean);
+    if (!pts.length) return;
+    const d = smooth(pts);
+    if (si === 0 && !s.dash && pts.length > 1) g += `<path d="${d}L${pts[pts.length - 1][0]},${y(min)}L${pts[0][0]},${y(min)}Z" fill="url(#ar${uid})"/>`;
+    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.6" stroke-linecap="round" ${s.dash ? 'stroke-dasharray="4 6" opacity="0.8"' : `filter="url(#gl${uid})"`}/>`;
+    s.values.forEach((v, i) => { if (v !== null && v !== undefined) g += `<circle cx="${x(i)}" cy="${y(v)}" r="${i === s.values.length - 1 ? 5 : 2.4}" fill="${s.color}" ${i === s.values.length - 1 ? `stroke="var(--bg)" stroke-width="2"` : 'opacity="0.7"'}><title>${esc(labels[i])}: ${esc(format(v))}</title></circle>`; });
+  });
+  const last = (s) => [...s.values].reverse().find((v) => v !== null && v !== undefined);
+  const head = readout ? `<div class="readout">${series.filter((s) => !s.dash).map((s) => `<div style="border-color:${s.color}"><span>${esc(s.name)}, latest</span><strong>${last(s) === undefined ? '—' : esc(format(last(s)))}</strong></div>`).join('')}</div>` : '';
+  return `<div class="chart">${head}<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(yLabel)}">${g}</svg>
     <div class="legend">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div></div>`;
 }
 
@@ -94,4 +110,63 @@ export function momentumChart(rows, { opp = 'Opponent' } = {}) {
   }
   for (const m of [0, 45, 90]) g += `<text x="${pad + m * bw}" y="${H - 4}" text-anchor="middle">${m}'</text>`;
   return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Attacking momentum">${g}</svg><div class="legend"><span><i style="background:var(--cyan)"></i>Spurs on top</span><span><i style="background:var(--loss)"></i>${esc(opp)} on top</span></div></div>`;
+}
+
+// ---------- Pitch graphics (vertical, attacking upwards) ----------
+const PW = 340; const PH = 480;
+function pitchBase(id, { half = false } = {}) {
+  const h = half ? PH / 2 + 20 : PH;
+  const lines = 'stroke="rgba(220,240,255,0.55)" stroke-width="1.4" fill="none"';
+  let g = `<defs><radialGradient id="pg${id}" cx="50%" cy="0%" r="90%"><stop offset="0" stop-color="#0f3a6b"/><stop offset="1" stop-color="#071a3a"/></radialGradient></defs>
+    <rect x="0" y="0" width="${PW}" height="${h}" rx="10" fill="url(#pg${id})"/>`;
+  for (let i = 0; i < 10; i++) g += `<rect x="12" y="${12 + i * 45.6}" width="${PW - 24}" height="22.8" fill="rgba(120,200,255,0.025)"/>`;
+  g += `<rect x="12" y="12" width="${PW - 24}" height="${PH - 24}" ${lines}/><rect x="${PW / 2 - 80}" y="12" width="160" height="70" ${lines}/><rect x="${PW / 2 - 36}" y="12" width="72" height="24" ${lines}/>`;
+  g += `<line x1="12" x2="${PW - 12}" y1="${PH / 2}" y2="${PH / 2}" stroke="rgba(220,240,255,0.55)" stroke-width="1.4"/><circle cx="${PW / 2}" cy="${PH / 2}" r="44" ${lines}/>`;
+  g += `<rect x="${PW / 2 - 80}" y="${PH - 82}" width="160" height="70" ${lines}/><rect x="${PW / 2 - 36}" y="${PH - 36}" width="72" height="24" ${lines}/>`;
+  return { g, h };
+}
+
+// Measured: Spurs shots by zone, shaded by xG.
+export function shotZonePitch(zones) {
+  const entries = Object.entries(zones || {});
+  if (!entries.length) return '<div class="empty small">No shot locations yet.</div>';
+  const { g: base } = pitchBase('z');
+  const maxXg = Math.max(...entries.map(([, z]) => z.xg), 0.01);
+  const bx = PW / 2 - 80; const bw = 160; const top = 12;
+  const rects = {
+    'six-left': [bx, top, 44, 24], 'six-centre': [PW / 2 - 36, top, 72, 24], 'six-right': [PW / 2 + 36, top, 44, 24],
+    'box-left': [bx, top + 24, 52, 46], 'box-centre': [bx + 52, top + 24, 56, 46], 'box-right': [bx + 108, top + 24, 52, 46],
+    'outside-left': [12, top + 70, bx - 12 + 20, 90], 'outside-centre': [bx + 20, top + 70, bw - 40, 90], 'outside-right': [bx + bw - 20, top + 70, PW - 12 - (bx + bw - 20), 90],
+  };
+  let g = '';
+  for (const [k, [rx, ry, rw, rh]] of Object.entries(rects)) {
+    const z = zones[k];
+    const a = z ? 0.12 + 0.7 * (z.xg / maxXg) : 0.03;
+    g += `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" fill="rgba(60,232,255,${a.toFixed(2)})" stroke="rgba(60,232,255,0.35)"><title>${k.replace('-', ' ')}: ${z ? `${z.shots} shots, ${z.goals} goals, ${z.xg} xG` : 'no shots'}</title></rect>`;
+    if (z && rh >= 40) g += `<text x="${rx + rw / 2}" y="${ry + rh / 2}" text-anchor="middle" fill="#fff" style="font:600 13px var(--display)">${z.xg.toFixed(1)}</text><text x="${rx + rw / 2}" y="${ry + rh / 2 + 15}" text-anchor="middle" fill="rgba(234,242,255,0.75)" style="font-size:10px">${z.shots} sh · ${z.goals} g</text>`;
+  }
+  return `<div class="pitch-wrap"><svg viewBox="0 0 ${PW} 200" role="img" aria-label="Shots by zone">${base}${g}</svg></div>`;
+}
+
+// Illustrative concept boards. Positions are drawn by hand to explain an idea and are
+// never presented as measured Tottenham positions.
+export function conceptPitch(kind) {
+  const { g: base } = pitchBase(kind);
+  const dot = (x, y, fill, label = '') => `<circle cx="${x}" cy="${y}" r="11" fill="${fill}" stroke="#04102a" stroke-width="2"/>${label ? `<text x="${x}" y="${y + 4}" text-anchor="middle" style="font:600 10px var(--display)" fill="#04102a">${label}</text>` : ''}`;
+  const arrow = (x1, y1, x2, y2, color = '#3ce8ff', dash = '6 6') => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="2.4" stroke-dasharray="${dash}" marker-end="url(#ah-${kind})"/>`;
+  const defs = `<defs><marker id="ah-${kind}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3ce8ff"/></marker></defs>`;
+  const spurs = '#eaf2ff'; const opp = '#ef5f74'; const free = '#3ce8ff';
+  let g = '';
+  if (kind === 'buildup') {
+    g += dot(170, 440, spurs, 'GK') + dot(110, 405, spurs, 'CB') + dot(230, 405, spurs, 'CB') + dot(140, 345, spurs, 'DM') + dot(200, 345, spurs, 'DM');
+    g += dot(130, 395, opp) + dot(210, 395, opp) + dot(170, 360, opp);
+    g += dot(85, 280, free) + dot(255, 280, free) + dot(170, 250, free) + dot(60, 190, spurs) + dot(280, 190, spurs) + dot(170, 160, spurs);
+    g += arrow(170, 428, 205, 360, '#3ce8ff', '0') + arrow(110, 393, 88, 296) + arrow(230, 393, 252, 296) + arrow(200, 333, 172, 266);
+  } else {
+    g += dot(110, 330, spurs, 'CB') + dot(170, 345, spurs, 'CB') + dot(230, 330, spurs, 'CB') + dot(145, 270, spurs, 'DM') + dot(195, 270, spurs, 'DM');
+    g += dot(40, 140, free, 'W') + dot(105, 125, free) + dot(170, 110, free, 'ST') + dot(235, 125, free) + dot(300, 140, free, 'W');
+    g += `<rect x="90" y="250" width="160" height="110" rx="8" fill="none" stroke="#d9c25b" stroke-dasharray="5 5"/><text x="170" y="378" text-anchor="middle" fill="#d9c25b" style="font-size:11px">rest defence (3+2)</text>`;
+    g += `<text x="170" y="92" text-anchor="middle" fill="#3ce8ff" style="font-size:11px">five attacking lanes</text>`;
+  }
+  return `<div class="pitch-wrap"><svg viewBox="0 0 ${PW} ${PH}" role="img" aria-label="Illustrative tactical diagram">${defs}${base}${g}</svg></div>`;
 }
