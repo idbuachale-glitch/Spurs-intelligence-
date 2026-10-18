@@ -99,7 +99,7 @@ export function matchBreakdown({ match, teamSummary, seasonPlayers }) {
     out.styleTags = tags;
 
     // Team numbers against Spurs' own season average.
-    const cmp = (label, a, b, avgSpurs, lowerBetter = false, dp = 1) => ({ label, spurs: a, opp: b, seasonAvg: avgSpurs ?? null, lowerBetter, dp });
+    const cmp = (label, a, b, avgSpurs, lowerBetter = false, dp = 0) => ({ label, spurs: a, opp: b, seasonAvg: avgSpurs ?? null, lowerBetter, dp });
     out.comparison = [
       cmp('xG', S.xg, O.xg, season?.xg?.spurs?.value ?? null, false, 2), cmp('Shots', S.shots, O.shots, season?.shots?.spurs?.value), cmp('Shots on target', S.sot, O.sot, season?.sot?.spurs?.value),
       cmp('Big chances', S.bigChances, O.bigChances, season?.bigChances?.spurs?.value), cmp('Possession %', S.possession, O.possession, season?.possession?.spurs?.value),
