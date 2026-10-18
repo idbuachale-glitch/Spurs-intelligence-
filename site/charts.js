@@ -170,3 +170,26 @@ export function conceptPitch(kind) {
   }
   return `<div class="pitch-wrap"><svg viewBox="0 0 ${PW} ${PH}" role="img" aria-label="Illustrative tactical diagram">${defs}${base}${g}</svg></div>`;
 }
+
+// Radar (spider) chart of percentiles 0–100. axes: [{ label, a, b? }]
+export function radar(axes, { aName = 'Player', bName = null } = {}) {
+  const ax = axes.filter((x) => x.a !== null && x.a !== undefined || (x.b !== null && x.b !== undefined));
+  if (ax.length < 3) return '<div class="empty small">Not enough minutes for a radar yet.</div>';
+  const S = 320; const c = S / 2; const R = 112; const n = ax.length;
+  const pt = (i, v) => { const ang = -Math.PI / 2 + (i / n) * Math.PI * 2; const r = (Math.max(0, Math.min(100, v ?? 0)) / 100) * R; return [c + Math.cos(ang) * r, c + Math.sin(ang) * r]; };
+  let g = '';
+  for (const lvl of [25, 50, 75, 100]) g += `<polygon points="${ax.map((_, i) => pt(i, lvl).join(',')).join(' ')}" fill="none" stroke="var(--line)" ${lvl === 50 ? 'stroke-dasharray="3 4" stroke="var(--faint)"' : ''}/>`;
+  ax.forEach((a, i) => {
+    const [x, y] = pt(i, 100); g += `<line x1="${c}" y1="${c}" x2="${x}" y2="${y}" stroke="var(--line)"/>`;
+    const [lx, ly] = pt(i, 128);
+    g += `<text x="${lx}" y="${ly}" text-anchor="${Math.abs(lx - c) < 8 ? 'middle' : lx > c ? 'start' : 'end'}" dominant-baseline="middle" style="font-size:10.5px;fill:var(--muted)">${esc(a.label)}</text>`;
+  });
+  const shape = (key, color, fillOp) => {
+    const pts = ax.map((a, i) => pt(i, a[key]).join(',')).join(' ');
+    return `<polygon points="${pts}" fill="${color}" fill-opacity="${fillOp}" stroke="${color}" stroke-width="2.2"/>` + ax.map((a, i) => { const [x, y] = pt(i, a[key]); return a[key] === null || a[key] === undefined ? '' : `<circle cx="${x}" cy="${y}" r="3" fill="${color}"><title>${esc(a.label)}: ${a[key]}th percentile</title></circle>`; }).join('');
+  };
+  if (bName) g += shape('b', 'var(--draw)', 0.18);
+  g += shape('a', 'var(--cyan)', 0.22);
+  return `<div class="chart" style="max-width:420px;margin:0 auto"><svg viewBox="-95 -14 ${S + 190} ${S + 28}" role="img" aria-label="Radar chart">${g}</svg>
+    <div class="legend" style="justify-content:center"><span><i style="background:var(--cyan)"></i>${esc(aName)}</span>${bName ? `<span><i style="background:var(--draw)"></i>${esc(bName)}</span>` : ''}<span><i style="background:var(--faint)"></i>dashed ring = league average (50th)</span></div></div>`;
+}

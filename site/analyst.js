@@ -66,8 +66,8 @@ export function answer(q, ctx) {
       target = players.filter((p) => p.current && (!g || g[1].includes(p.pos))).sort((a, b) => (b.season.totals.minutes || 0) - (a.season.totals.minutes || 0))[0];
     }
     const reps = target && analysis.squad.replacements[target.id];
-    if (!reps || !reps.length) return out({ type: 'Not enough data', text: 'Replacement matching needs at least 450 Premier League minutes for the player this season.', source: src });
-    return out({ type: 'Algorithmic recommendation (not reporting)', text: `Players with the most similar per-90 profile to ${target.web} among Premier League ${target.pos === 'GK' ? 'goalkeepers' : target.pos === 'DEF' ? 'defenders' : target.pos === 'MID' ? 'midfielders' : 'forwards'} (450+ minutes). Fees, wages and availability are not known and not estimated.`,
+    if (!reps || !reps.length) return out({ type: 'Not enough data', text: 'Replacement matching needs more Premier League minutes for this player first.', source: src });
+    return out({ type: 'Algorithmic recommendation (not reporting)', text: `Players with the most similar per-90 profile to ${target.web} among Premier League ${target.pos === 'GK' ? 'goalkeepers' : target.pos === 'DEF' ? 'defenders' : target.pos === 'MID' ? 'midfielders' : 'forwards'} (regular minutes this season). Fees, wages and availability are not known and not estimated.`,
       table: reps.map((r) => [r.web, r.team, r.age ?? '—', r.minutes, `${r.similarity}%`]), head: ['Player', 'Club', 'Age', 'Minutes', 'Similarity'], sample: 'Current season', competition: 'Premier League', source: 'Fantasy Premier League API' });
   }
   const names = players.filter((p) => t.includes(norm(p.web)) || (p.knownName && t.includes(norm(p.knownName))));

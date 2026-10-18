@@ -1,11 +1,11 @@
 import { state, load, loadSeason, esc, fmt, fmtPlain, fmtDate, fmtTime, fmtDateTime, ago, statusText, resultChip, photoHtml, norm, sortableTable } from './lib.js';
-import { lineChart, pairBars, shotMap, barList, xgRace, momentumChart, shotZonePitch, conceptPitch } from './charts.js';
+import { lineChart, pairBars, shotMap, barList, xgRace, momentumChart, shotZonePitch, conceptPitch, radar } from './charts.js';
 import { answer, renderAnswer, suggestions } from './analyst.js';
 
 const NAV = [
   ['overview', 'Overview', 'i-home'], ['fixtures', 'Fixtures & results', 'i-cal'], ['players', 'Player Lab', 'i-user'], ['team', 'Team statistics', 'i-chart'],
   ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['table', 'League table', 'i-table'],
-  ['breakdown', 'Match breakdown', 'i-spark'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
+  ['breakdown', 'Match breakdown', 'i-spark'], ['simulator', 'Season simulator', 'i-dice'], ['style', 'De Zerbi tracker', 'i-trend'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
 ];
 const BOTTOM = ['overview', 'breakdown', 'players', 'fixtures'];
 const view = document.getElementById('view');
@@ -183,6 +183,9 @@ AFTER.overview = () => {
   };
   tick(); clearInterval(window.__cd); window.__cd = setInterval(tick, 30000);
 };
+const RADAR_LABELS = { xg: 'xG', xa: 'xA', goals: 'Goals', assists: 'Assists', threat: 'Threat', creativity: 'Creativity', tackles: 'Tackles', cbi: 'Clear/Block/Int', recoveries: 'Recoveries', defcon: 'Def. contribution', xgc: 'Low xG conceded', saves: 'Saves', gc: 'Low goals conceded' };
+const radarValue = (k, v) => (v === null || v === undefined ? null : ['xgc', 'gc'].includes(k) ? 100 - v : v);
+
 function rankTiles(ranks, keys) {
   if (!ranks || !ranks.metrics) return '';
   const tiles = keys.map((k) => ranks.metrics[k] && [k, ranks.metrics[k]]).filter(Boolean);
@@ -305,6 +308,7 @@ VIEWS.player = async (id) => {
     ${block('Discipline & FPL', 'discipline', which)}
   </div>
   <p class="source">Premier League ${esc(state.season.replace('-', '/'))}. <sup>F</sup> = FPL Core Insights (FotMob definitions); others = FPL API (Opta). "calc" = calculated rate from the same matches only. * = recorded in only some matches. Retrieved ${esc(fmtDateTime(data.generatedAt))}.</p>
+  ${pct ? `<div class="panel section"><div class="section-head"><h2>Player radar</h2><span class="muted small">vs ${pct.peers} Premier League ${esc(state.meta.posLabels[pct.pos].toLowerCase())}s</span></div>${radar(Object.entries(pct.percentiles).map(([k, v]) => ({ label: RADAR_LABELS[k] || k, a: radarValue(k, v) })), { aName: p.web })}<p class="small muted" style="text-align:center">Further out = better than more of the league. <a href="#/compare/${p.id}">Compare with another player</a></p></div>` : ''}
   ${pct ? `<div class="panel section"><div class="section-head"><h2>Against Premier League ${esc(state.meta.posLabels[pct.pos].toLowerCase())}s</h2><span class="muted small">Percentile among ${pct.peers} with ${pct.minMinutes}+ minutes</span></div>
     ${Object.entries(pct.percentiles).filter(([, v]) => v !== null).map(([k, v]) => { const d = statDefs().find((x) => x.key === k); return `<div class="pbar"><span>${esc(d ? d.label : k)} /90</span><div class="track"><div class="fill" style="width:${v}%"></div></div><span class="num" style="text-align:right">${v}</span></div>`; }).join('')}
     <p class="source">Per-90 values from FPL season totals (all clubs, so a mid-season signing's figures include his previous PL club). For xG conceded and goals conceded, a lower percentile is better.</p></div>` : ''}
@@ -338,7 +342,16 @@ VIEWS.compare = async (a = '', b = '') => {
     ${keys.map((k) => { const d = statDefs().find((x) => x.key === k); return `<tr><td>${esc(d.label)}</td><td class="r">${fmt(A.season.totals[k], d.dp ?? 0)}</td><td class="r">${fmt(B.season.totals[k], d.dp ?? 0)}</td><td class="r">${d.per90 ? fmt(A.season.per90[k], 2) : ''}</td><td class="r">${d.per90 ? fmt(B.season.per90[k], 2) : ''}</td></tr>`; }).join('')}
     ${(state.meta.rateDefs || []).map((r) => `<tr><td>${esc(r.label)}</td><td class="r">${A.season.rates?.[r.key] ? `${A.season.rates[r.key].value}%` : '<span class="na">—</span>'}</td><td class="r">${B.season.rates?.[r.key] ? `${B.season.rates[r.key].value}%` : '<span class="na">—</span>'}</td><td></td><td></td></tr>`).join('')}
     </tbody></table></div><p class="source">Premier League ${esc(state.season.replace('-', '/'))}. Per-90 rates for low-minute players are volatile.</p></div>` : '<div class="empty section">Choose two players.</div>';
-  return `<h1>Compare players</h1><div class="filters"><select class="ctl" id="cmp-a" aria-label="First player"><option value="">First player</option>${opts(a)}</select><select class="ctl" id="cmp-b" aria-label="Second player"><option value="">Second player</option>${opts(b)}</select></div>${table}`;
+  let radarHtml = '';
+  if (A && B) {
+    const [fa, fb] = await Promise.all([loadSeason(`players/${A.id}.json`, state.season, { optional: true }), loadSeason(`players/${B.id}.json`, state.season, { optional: true })]);
+    const pa = fa?.percentiles; const pb = fb?.percentiles;
+    if (pa && pb) {
+      const keys = Object.keys(pa.percentiles).filter((k) => k in pb.percentiles);
+      radarHtml = `<div class="panel section"><div class="section-head"><h2>Radar</h2><span class="muted small">${pa.pos === pb.pos ? `Percentiles vs Premier League ${esc(state.meta.posLabels[pa.pos].toLowerCase())}s` : 'Different positions: each is ranked against his own position'}</span></div>${radar(keys.map((k) => ({ label: RADAR_LABELS[k] || k, a: radarValue(k, pa.percentiles[k]), b: radarValue(k, pb.percentiles[k]) })), { aName: A.web, bName: B.web })}</div>`;
+    } else radarHtml = '<div class="banner info section">A radar needs enough Premier League minutes for both players (about 40% of the matches played so far).</div>';
+  }
+  return `<h1>Compare players</h1><div class="filters"><select class="ctl" id="cmp-a" aria-label="First player"><option value="">First player</option>${opts(a)}</select><select class="ctl" id="cmp-b" aria-label="Second player"><option value="">Second player</option>${opts(b)}</select></div>${radarHtml}${table}`;
 };
 AFTER.compare = () => {
   const go = () => { location.hash = `#/compare/${document.getElementById('cmp-a').value}/${document.getElementById('cmp-b').value}`; };
@@ -499,7 +512,7 @@ VIEWS.squad = async () => {
   <div class="panel section"><div class="section-head"><h2>Replacement shortlist</h2><span class="label-analysis">Algorithmic recommendation</span></div>
     <select class="ctl" id="rep-player" aria-label="Player">${ps.filter((p) => sq.replacements[p.id]?.length).map((p) => `<option value="${p.id}">${esc(p.web)} (${p.pos})</option>`).join('')}</select>
     <div id="rep-out" style="margin-top:12px"></div>
-    <p class="tiny faint">Similarity compares per-90 numbers within the same position across all Premier League players with 450+ minutes, from the official FPL data. Strengths = measures in the top quarter of the league for that position.</p>${sq.notes.map((n) => `<p class="tiny faint">${esc(n)}</p>`).join('')}</div>
+    <p class="tiny faint">Similarity compares per-90 numbers within the same position across all Premier League players with enough minutes (about 40% of the matches played so far), from the official FPL data. Strengths = measures in the top quarter of the league for that position.</p>${sq.notes.map((n) => `<p class="tiny faint">${esc(n)}</p>`).join('')}</div>
   ${[['loans', 'Out on loan'], ['departures', 'Left the club this season'], ['unregistered', 'Not in the registered squad']].filter(([k]) => sq[k]?.length).map(([k, title]) => `<div class="panel section"><h2>${title}</h2>${sq[k].map((d) => `<div class="statrow"><span><a href="#/player/${d.playerId}">${esc(d.name)}</a> <span class="faint tiny">${esc(d.pos || '')}</span></span><span class="small muted" style="text-align:right">${esc(d.note || '')}${d.apps ? ` · ${d.apps} Spurs apps this season` : ''}</span></div>`).join('')}<p class="tiny faint">Status and note as published by the Premier League (FPL player list). These players are excluded from the current squad, depth charts and replacement analysis.</p></div>`).join('')}`;
 };
 AFTER.squad = async () => {
@@ -597,6 +610,14 @@ AFTER.match = async (id) => {
   }));
 };
 
+function forecastHtml(fc) {
+  const bar = `<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin:10px 0 6px"><div style="width:${fc.win}%;background:var(--win)"></div><div style="width:${fc.draw}%;background:var(--draw)"></div><div style="width:${fc.loss}%;background:var(--loss)"></div></div>`;
+  return `<div class="panel section"><div class="section-head"><h3>Match forecast</h3><span class="label-analysis">Model probability</span></div>
+    <div class="rank-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:8px"><div class="rank-tile" style="padding:12px"><div class="val" style="color:var(--win);font-size:1.5rem">${fc.win}%</div><div class="lbl">Spurs win</div></div><div class="rank-tile" style="padding:12px"><div class="val" style="color:var(--draw);font-size:1.5rem">${fc.draw}%</div><div class="lbl">Draw</div></div><div class="rank-tile" style="padding:12px"><div class="val" style="color:var(--loss);font-size:1.5rem">${fc.loss}%</div><div class="lbl">${esc(fc.opponent)} win</div></div></div>${bar}
+    <p class="small muted">Expected goals: Spurs ${fc.expectedGoals.spurs} – ${fc.expectedGoals.opp} ${esc(fc.opponent)}. Most likely scores: ${fc.likelyScores.slice(0, 3).map((x) => `${x.spurs}–${x.opp} (${x.p}%)`).join(', ')}.</p>
+    <p class="tiny faint">From a simple model of both teams' chance creation and concession this season. Not betting odds. <a href="#/simulator">How it works</a></p></div>`;
+}
+
 function scoutHtml(p, f) {
   const kindColor = { opportunity: 'var(--win)', threat: 'var(--loss)', watch: 'var(--draw)' };
   const kindLabel = { opportunity: 'Opportunity', threat: 'Threat', watch: 'Watch' };
@@ -608,6 +629,7 @@ function scoutHtml(p, f) {
     <div class="rank-tile"><div class="val">${p.venue.w}-${p.venue.d}-${p.venue.l}</div><div class="lbl">${esc(p.venue.label)}</div><div class="ctx">${p.venue.n} matches · scored ${p.venue.gf}, conceded ${p.venue.ga}</div></div>
     <div class="rank-tile"><div class="val">${p.overall.gf}–${p.overall.ga}</div><div class="lbl">Goals for and against</div><div class="ctx">${p.overall.n} league matches this season</div></div>
   </div>
+  ${p.forecast ? forecastHtml(p.forecast) : ''}
   ${p.form.length ? `<div class="panel section"><h3>Recent form</h3><div class="form-strip" style="margin-bottom:10px">${p.form.map((g) => resultChip(g.result)).join('')}</div>${p.form.slice().reverse().map((g) => `<div class="statrow"><span>${esc(fmtDate(g.kickoff, { day: 'numeric', month: 'short' }))} · ${g.home ? 'v' : '@'} ${esc(g.opponent)}</span><span class="v">${g.gf}–${g.ga}</span></div>`).join('')}</div>` : ''}
   ${p.tags.length ? `<div class="chips section">${p.tags.map((x) => `<span class="pill" style="color:#bff6ff;border-color:rgba(60,232,255,.4)">${esc(x)}</span>`).join('')}</div>` : ''}
   <div class="grid three section">
@@ -666,6 +688,7 @@ VIEWS.breakdown = async (id) => {
     ${b.verdict ? `<div class="hero-meta"><span>xG <strong>${fmtPlain(b.verdict.xgFor, 2)}</strong> v <strong>${fmtPlain(b.verdict.xgAgainst, 2)}</strong></span>${b.momentumShare !== undefined && b.momentumShare !== null ? `<span>Spurs on top for <strong>${b.momentumShare}%</strong> of the match</span>` : ''}</div><p style="margin:10px 0 0;color:#dfe9ff">${esc(b.verdict.text)}</p>` : ''}
     ${b.styleTags.length ? `<div class="chips" style="margin-top:12px">${b.styleTags.map((t) => `<span class="pill" style="color:#bff6ff;border-color:rgba(60,232,255,.4)">${esc(t)}</span>`).join('')}</div>` : ''}</section>
 
+  ${m.forecast && m.forecast.result ? `<div class="banner info section">Pre-match forecast: Spurs win ${m.forecast.win}%, draw ${m.forecast.draw}%, ${esc(f.opponent)} win ${m.forecast.loss}%. The ${({ W: 'win', D: 'draw', L: 'defeat' })[m.forecast.result]} had a ${m.forecast.probOfResult}% chance. <a href="#/simulator">Season simulator</a></div>` : ''}
   <div class="grid two section">
     <div class="panel"><h2>Key moments</h2>${b.moments.length ? `<div class="timeline">${b.moments.map((x) => `<div class="tl-row ${x.side}"><span class="tl-min">${esc(x.label)}</span><span class="tl-dot ${x.kind}"></span><span>${esc(x.text)}<span class="faint small"> · ${x.side === 'spurs' ? 'Spurs' : esc(f.opponent)}</span></span></div>`).join('')}</div>` : '<p class="na">No goals or big chances recorded with minutes.</p>'}
       ${b.spells.length ? `<h3 style="margin-top:16px">Spells on top</h3><div class="chips">${b.spells.map((x) => `<span class="pill" style="border-color:${x.side === 'spurs' ? 'var(--cyan)' : 'var(--loss)'}">${esc(x.text)}</span>`).join('')}</div>` : ''}
@@ -697,6 +720,76 @@ VIEWS.breakdown = async (id) => {
 AFTER.breakdown = () => {
   const s = document.getElementById('bd-match');
   if (s) s.addEventListener('change', () => { location.hash = `#/breakdown/${encodeURIComponent(s.value)}`; });
+};
+
+// ---------------- Season simulator ----------------
+VIEWS.simulator = async () => {
+  const sim = await loadSeason('simulation.json', state.season, { optional: true });
+  if (!sim) return '<h1>Season simulator</h1><div class="empty">The simulator runs for the current season once match data is available.</div>';
+  const s = sim.spurs;
+  const likely = s.positions.indexOf(Math.max(...s.positions)) + 1;
+  const tile = (v, l, ctx, col) => `<div class="rank-tile"><div class="val" style="${col ? `color:${col}` : ''}">${v}</div><div class="lbl">${l}</div><div class="ctx">${ctx}</div></div>`;
+  const maxP = Math.max(...s.positions);
+  const bars = s.positions.map((p, i) => { const pos = i + 1; const h = maxP ? (p / maxP) * 150 : 0; const col = pos >= 18 ? 'var(--loss)' : pos <= 6 ? 'var(--win)' : 'var(--cyan)';
+    return `<g><rect x="${18 + i * 30}" y="${170 - h}" width="22" height="${h}" rx="3" fill="${col}" opacity="${pos === s.position ? 1 : 0.75}"><title>${ordinal(pos)}: ${p}%</title></rect><text x="${29 + i * 30}" y="186" text-anchor="middle">${pos}</text>${p >= 3 ? `<text x="${29 + i * 30}" y="${164 - h}" text-anchor="middle" style="font-size:9px">${Math.round(p)}</text>` : ''}</g>`; }).join('');
+  const fc = sim.next;
+  return `<div class="section-head"><h1>Season simulator</h1><span class="label-analysis">Re-run after every match</span></div>
+  <p class="muted">The rest of the Premier League season played out ${sim.sims.toLocaleString()} times (${sim.remainingFixtures} fixtures left), based on how well every team creates and prevents chances.</p>
+  <div class="rank-grid">
+    ${tile(`${s.relegation}%`, 'Relegation', 'Finishing 18th–20th', s.relegation >= 25 ? 'var(--loss)' : null)}
+    ${tile(`${Math.round((100 - s.relegation) * 10) / 10}%`, 'Survival', 'Finishing 17th or higher')}
+    ${tile(`${s.topHalf}%`, 'Top half', 'Finishing 1st–10th')}
+    ${tile(`${s.top6}%`, 'Europe (top 6)', `Top 4: ${s.top4}% · title: ${s.title}%`)}
+    ${tile(`${s.expectedPoints}`, 'Expected points', `Now ${s.points} from ${s.played} · most likely finish ${ordinal(likely)}`)}
+  </div>
+  <div class="panel section"><h2>Where Spurs finish</h2><div class="chart"><svg viewBox="0 0 620 196" role="img" aria-label="Finishing position probabilities">${bars}</svg></div>
+    <div class="legend"><span><i style="background:var(--win)"></i>Europe places</span><span><i style="background:var(--cyan)"></i>Mid-table</span><span><i style="background:var(--loss)"></i>Relegation</span><span>Numbers = % chance</span></div></div>
+  ${fc ? `<section class="section"><h2>Next match: ${fc.home ? 'v' : '@'} ${esc(fc.opponent)}</h2>${forecastHtml(fc)}</section>` : ''}
+  ${sim.record.length ? `<div class="panel section"><h2>Forecast record</h2><div class="table-wrap"><table><thead><tr><th>Match</th><th class="r">W / D / L forecast</th><th class="r">Result</th><th class="r">Chance given</th></tr></thead><tbody>${sim.record.map((r) => `<tr><td>${esc(fmtDate(r.kickoff, { day: 'numeric', month: 'short' }))} ${r.home ? 'v' : '@'} ${esc(r.opponent)}</td><td class="r">${r.win} / ${r.draw} / ${r.loss}</td><td class="r">${r.score ? `${r.score.spurs}–${r.score.opp}` : ''} ${resultChip(r.result, true)}</td><td class="r">${r.probOfResult}%</td></tr>`).join('')}</tbody></table></div><p class="source">Forecasts saved before kick-off. Average Brier score ${(sim.record.reduce((a, r) => a + r.brier, 0) / sim.record.length).toFixed(3)} (lower is better; always guessing a third each is 0.667).</p></div>` : '<p class="small muted section">Forecasts are saved before each match from now on, then compared with the result here.</p>'}
+  <div class="panel section"><h2>Projected final table</h2><div class="table-wrap"><table><thead><tr><th>#</th><th>Club</th><th class="r">Now</th><th class="r">Exp. pts</th><th class="r">Top 4</th><th class="r">Top 6</th><th class="r">Relegation</th></tr></thead><tbody>
+    ${sim.teams.map((t, i) => `<tr class="${t.teamId === s.teamId ? 'hl' : ''}"><td>${i + 1}</td><td>${esc(t.team)}</td><td class="r">${t.points}</td><td class="r"><strong>${t.expectedPoints}</strong></td><td class="r">${t.top4}%</td><td class="r">${t.top6}%</td><td class="r" style="color:${t.relegation >= 30 ? 'var(--loss)' : 'inherit'}">${t.relegation}%</td></tr>`).join('')}</tbody></table></div></div>
+  <p class="source">${esc(sim.method)} Home advantage ×${sim.homeAdvantage}; ratings are pulled towards average by the equivalent of ${sim.priorMatches} matches so early-season results don't dominate. ${esc(sim.label)}</p>`;
+};
+
+// ---------------- De Zerbi style tracker ----------------
+VIEWS.style = async () => {
+  const team = await loadSeason('team.json');
+  const ms = team.matches.filter((m) => m.adv);
+  if (ms.length < 2) return '<h1>De Zerbi tracker</h1><div class="empty">The tracker needs at least two Premier League matches with detailed data.</div>';
+  const ranks = team.leagueRanks?.metrics || {};
+  const metrics = [
+    { key: 'possession', label: 'Possession', unit: '%', get: (m) => m.adv.spurs.possession, league: ranks.possession?.leagueAvg, why: 'De Zerbi teams aim to control the ball.' },
+    { key: 'fieldTilt', label: 'Territory (field tilt)', unit: '%', get: (m) => m.adv.fieldTilt, league: ranks.fieldTilt?.leagueAvg, why: 'Share of the passing done in the opposition half: how high up the pitch Spurs play.' },
+    { key: 'passPct', label: 'Pass accuracy', unit: '%', get: (m) => m.adv.spurs.passPct, league: ranks.passPct?.leagueAvg, why: 'Building through pressure needs secure, short passing.' },
+    { key: 'xgShot', label: 'Chance quality (xG per shot)', unit: '', dp: 3, get: (m) => (m.adv.spurs.xg !== null && m.adv.spurs.shots ? m.adv.spurs.xg / m.adv.spurs.shots : null), league: null, why: 'Patient build-up should create better chances, not just more shots.' },
+    { key: 'touchesOppBox', label: 'Touches in the opposition box', unit: '', get: (m) => m.adv.spurs.touchesOppBox, league: ranks.touchesOppBox?.leagueAvg, why: 'Possession should turn into presence in the box.' },
+    { key: 'xgaAgainst', label: 'xG conceded', unit: '', dp: 2, lower: true, get: (m) => m.adv.opp.xg, league: ranks.xga?.leagueAvg, why: 'Control of the ball should limit what opponents create.' },
+  ];
+  const labels = ms.map((m) => m.opponentShort || m.opponent.slice(0, 3));
+  const roll = (vals) => vals.map((_, i) => { const w = vals.slice(Math.max(0, i - 2), i + 1).filter((v) => v !== null); return w.length ? w.reduce((a, b) => a + b, 0) / w.length : null; });
+  const card = (mt) => {
+    const vals = ms.map(mt.get).map((v) => (v === null || v === undefined ? null : Number(v)));
+    const known = vals.filter((v) => v !== null);
+    const half = Math.floor(known.length / 2);
+    const first = known.slice(0, half); const last = known.slice(-half);
+    const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+    const a1 = avg(first); const a2 = avg(last);
+    let verdict = 'Not enough matches to call a trend';
+    if (a1 !== null && a2 !== null && half >= 2) {
+      const ch = (a2 - a1) / (Math.abs(a1) || 1);
+      const better = mt.lower ? ch < -0.08 : ch > 0.08; const worse = mt.lower ? ch > 0.08 : ch < -0.08;
+      verdict = better ? `Improving: ${fmtPlain(a1, mt.dp ?? 1)} → ${fmtPlain(a2, mt.dp ?? 1)}${mt.unit}` : worse ? `Getting worse: ${fmtPlain(a1, mt.dp ?? 1)} → ${fmtPlain(a2, mt.dp ?? 1)}${mt.unit}` : `Stable around ${fmtPlain(a2, mt.dp ?? 1)}${mt.unit}`;
+    }
+    const col = /Improving/.test(verdict) ? 'var(--win)' : /worse/.test(verdict) ? 'var(--loss)' : 'var(--muted)';
+    const series = [{ name: mt.label, color: 'var(--cyan)', values: vals }, { name: '3-match average', color: 'var(--draw)', values: roll(vals), dash: true }];
+    if (mt.league !== null && mt.league !== undefined) series.push({ name: 'League average', color: 'var(--faint)', values: vals.map(() => mt.league), dash: true });
+    return `<div class="panel"><div class="section-head"><h3>${esc(mt.label)}</h3><span class="small" style="color:${col};font-weight:600">${esc(verdict)}</span></div>
+      ${lineChart({ labels, series, height: 200, format: (v) => v.toFixed(mt.dp ?? 0), readout: false })}<p class="small muted" style="margin-top:6px">${esc(mt.why)}</p></div>`;
+  };
+  return `<div class="section-head"><h1>De Zerbi tracker</h1><span class="label-observed">Measured, match by match</span></div>
+  <p class="muted">Is Spurs' play moving towards what De Zerbi's teams are known for: keeping the ball, playing in the opposition half, passing securely and creating good chances? Each chart shows every Premier League match this season, a three-match average and the league average. Trends compare the earlier matches with the more recent ones.</p>
+  <div class="grid two section">${metrics.map(card).join('')}</div>
+  <p class="source">Match data from FotMob via FPL Core Insights, ${ms.length} Premier League matches. Pressing intensity (PPDA) and build-up shape aren't in the free data, so they can't be tracked.</p>`;
 };
 
 // ---------------- Data sources & settings ----------------
