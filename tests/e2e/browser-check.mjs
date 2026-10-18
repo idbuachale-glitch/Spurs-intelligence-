@@ -53,8 +53,15 @@ for (const [label, vp] of [['phone', { width: 390, height: 844, isMobile: true, 
   await page.screenshot({ path: path.join(shotDir, `${label}-player.png`), fullPage: false });
   // First played match page.
   await page.goto(`${base}#/match`); await page.waitForTimeout(800);
-  const href = await page.$eval('#view a.fx', (a) => a.getAttribute('href')).catch(() => null);
-  if (href) { await check(href.slice(2), 'match-detail'); }
+  const href = await page.$$eval('#view a.fx', (as) => (as.find((a) => a.querySelector('.res') && a.href.includes('pl-')) || {}).getAttribute?.('href')).catch(() => null);
+  if (href) {
+    await check(href.slice(2), 'match-detail');
+    const flow = await page.evaluate(() => ({ charts: document.querySelectorAll('#view .chart svg').length, tabs: document.querySelectorAll('[data-mtab]').length }));
+    await page.click('[data-mtab="Defending"]').catch(() => {});
+    const def = await page.evaluate(() => document.querySelector('#m-lineup th:nth-child(4)')?.innerText);
+    results.push({ viewport: label, page: 'match flow charts + stat tabs', ok: flow.charts >= 3 && flow.tabs === 5 && /Tackles/.test(def || ''), head: `${flow.charts} charts, ${flow.tabs} tabs, defending tab → ${def}` });
+    await page.screenshot({ path: path.join(shotDir, `${label}-match-flow.png`), fullPage: true });
+  }
   results.push({ viewport: label, page: 'script errors', ok: errors.length === 0, head: errors.slice(0, 3).join(' | ') || 'none' });
   await ctx.close();
 }

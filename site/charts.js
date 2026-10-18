@@ -61,3 +61,37 @@ export function barList(items, { max = null, format = (v) => v } = {}) {
   const m = max ?? Math.max(...items.map((i) => i.value || 0), 0.0001);
   return items.map((i) => `<div class="pbar"><span>${i.href ? `<a href="${i.href}">${esc(i.label)}</a>` : esc(i.label)}</span><div class="track"><div class="fill" style="width:${Math.max(0, Math.min(100, ((i.value || 0) / m) * 100))}%"></div></div><span class="num r" style="text-align:right">${esc(format(i.value))}</span></div>`).join('');
 }
+
+// Cumulative xG by minute ("xG race"), drawn as steps.
+export function xgRace(race, { opp = 'Opponent' } = {}) {
+  if (!race || race.length < 2) return '<div class="empty small">No minute-by-minute xG for this match.</div>';
+  const W = 640; const H = 220; const pad = { l: 36, r: 12, t: 12, b: 28 };
+  const maxMin = Math.max(90, ...race.map((r) => r.minute));
+  const maxXg = Math.max(0.5, ...race.map((r) => Math.max(r.spurs || 0, r.opp || 0))) * 1.1;
+  const x = (m) => pad.l + (m / maxMin) * (W - pad.l - pad.r);
+  const y = (v) => pad.t + (1 - v / maxXg) * (H - pad.t - pad.b);
+  const step = (k) => { let d = `M${x(0)},${y(0)}`; let last = 0; for (const r of race) { const v = r[k] ?? last; d += `H${x(r.minute).toFixed(1)}V${y(v).toFixed(1)}`; last = v; } return `${d}H${x(maxMin)}`; };
+  let g = '';
+  for (const v of [0, maxXg / 2, maxXg]) g += `<line class="axis" x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/><text x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${v.toFixed(1)}</text>`;
+  for (const m of [0, 15, 30, 45, 60, 75, 90]) g += `<text x="${x(m)}" y="${H - 8}" text-anchor="middle">${m}'</text>`;
+  g += `<line x1="${x(45)}" x2="${x(45)}" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--line)"/>`;
+  g += `<path d="${step('opp')}" fill="none" stroke="var(--loss)" stroke-width="2.4"/><path d="${step('spurs')}" fill="none" stroke="var(--cyan)" stroke-width="2.4"/>`;
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative xG by minute">${g}</svg><div class="legend"><span><i style="background:var(--cyan)"></i>Spurs</span><span><i style="background:var(--loss)"></i>${esc(opp)}</span></div></div>`;
+}
+
+// Attacking momentum per minute: bars above the line favour Spurs, below favour the opponent.
+export function momentumChart(rows, { opp = 'Opponent' } = {}) {
+  if (!rows || rows.length < 10) return '<div class="empty small">No momentum data for this match.</div>';
+  const W = 640; const H = 170; const mid = H / 2 - 6; const pad = 10;
+  const maxMin = Math.max(90, ...rows.map((r) => r.minute));
+  const maxV = Math.max(...rows.map((r) => Math.abs(r.value)), 1);
+  const bw = (W - 2 * pad) / maxMin;
+  let g = `<line x1="${pad}" x2="${W - pad}" y1="${mid}" y2="${mid}" stroke="var(--line)"/>`;
+  for (const r of rows) {
+    const h = (Math.abs(r.value) / maxV) * (mid - 8);
+    const xx = pad + (r.minute - 1) * bw;
+    g += `<rect x="${xx.toFixed(1)}" y="${(r.value >= 0 ? mid - h : mid).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${r.value >= 0 ? 'var(--cyan)' : 'var(--loss)'}" opacity="0.85"><title>${r.minute}': ${r.value}</title></rect>`;
+  }
+  for (const m of [0, 45, 90]) g += `<text x="${pad + m * bw}" y="${H - 4}" text-anchor="middle">${m}'</text>`;
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Attacking momentum">${g}</svg><div class="legend"><span><i style="background:var(--cyan)"></i>Spurs on top</span><span><i style="background:var(--loss)"></i>${esc(opp)} on top</span></div></div>`;
+}

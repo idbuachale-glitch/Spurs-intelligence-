@@ -77,7 +77,7 @@ export function answer(q, ctx) {
   }
   if (metric) {
     const g = GROUPS.find(([re]) => re.test(t));
-    let pool = players.filter((p) => (!g || g[1].includes(p.pos)) && (p.season.totals.minutes || 0) >= (metric.per90 || metric.rate ? 180 : 1));
+    let pool = players.filter((p) => p.current && (!g || g[1].includes(p.pos)) && (p.season.totals.minutes || 0) >= (metric.per90 || metric.rate ? 180 : 1));
     let m = metric;
     if (!pool.some((p) => valueOf(p, m).v !== null)) {
       if (m.fallback) { m = METRICS.find((x) => x.key === m.fallback) || { key: m.fallback, per90: true, label: m.fallback }; }
@@ -90,7 +90,7 @@ export function answer(q, ctx) {
     return out({ type: m.rate ? 'Calculated statistics' : 'Observed data',
       text: `${pool[0].p.web} leads ${g ? g[2] : 'the squad'} for ${m.label} (${pool[0].text}).${fellBack}${m.rate ? ' Rates are only shown where attempts were recorded.' : ''}`,
       table: pool.map((x) => [x.p.web, x.text, x.sample]), head: ['Player', m.label, m.rate ? 'Attempts / matches' : 'Minutes'],
-      sample: `Players with ${m.per90 || m.rate ? '180+' : 'any'} PL minutes`, competition: 'Premier League', source: src });
+      sample: `Current-squad players with ${m.per90 || m.rate ? '180+' : 'any'} PL minutes`, competition: 'Premier League', source: src });
   }
   return out({ type: 'Not understood', text: 'Try asking about a statistic (goals, xG, chances created, take-ons, tackles, passing), a position group, recent defensive form, weaknesses or replacements.' });
 }

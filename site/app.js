@@ -1,5 +1,5 @@
 import { state, load, loadSeason, esc, fmt, fmtPlain, fmtDate, fmtTime, fmtDateTime, ago, statusText, resultChip, photoHtml, norm, sortableTable } from './lib.js';
-import { lineChart, pairBars, shotMap, barList } from './charts.js';
+import { lineChart, pairBars, shotMap, barList, xgRace, momentumChart } from './charts.js';
 import { answer, renderAnswer, suggestions } from './analyst.js';
 
 const NAV = [
@@ -98,7 +98,7 @@ async function setupSearch() {
       return { p, score: score + (p.current ? 5 : 0) + Math.min(4, p.seasons.length) };
     }).filter((x) => x.score > 30 || (q.length >= 3 && x.score > 0)).sort((a, b) => b.score - a.score).slice(0, 8);
     if (!items.length) { list.innerHTML = '<li aria-disabled="true" class="muted">No matching Spurs player in the stored seasons</li>'; list.hidden = false; return; }
-    list.innerHTML = items.map(({ p }, i) => `<li role="option" id="opt-${i}" data-id="${esc(p.id)}" aria-selected="${i === active}">${photoHtml(p, 'sm')}<span>${highlight(p.name, q)}${norm(p.name).includes(q) ? '' : ` <span class="faint">(${esc(p.web)})</span>`}</span><span class="meta">${p.current ? 'Current squad' : esc(p.seasons.map((s) => s.season.slice(2, 4)).join(', '))} · ${esc(p.pos)}</span></li>`).join('');
+    list.innerHTML = items.map(({ p }, i) => `<li role="option" id="opt-${i}" data-id="${esc(p.id)}" aria-selected="${i === active}">${photoHtml(p, 'sm')}<span>${highlight(p.name, q)}${norm(p.name).includes(q) ? '' : ` <span class="faint">(${esc(p.web)})</span>`}</span><span class="meta">${p.current ? 'Current squad' : p.membershipLabel ? esc(p.membershipLabel) : `Former · ${esc(p.seasons.map((s) => s.season.replace('-', '/')).slice(0, 3).join(', '))}`} · ${esc(p.pos)}</span></li>`).join('');
     list.hidden = false; input.setAttribute('aria-expanded', 'true');
   };
   const choose = (id) => { const p = state.index.find((x) => x.id === id); close(); input.value = ''; input.blur(); if (p) location.hash = `#/player/${p.id}`; };
@@ -138,7 +138,7 @@ VIEWS.overview = async () => {
   const last = [...all].reverse().find((f) => f.result);
   const me = table.spurs;
   const o = team.overall;
-  const top = (key) => [...players.players].filter((p) => p.season.totals[key] !== null).sort((a, b) => (b.season.totals[key] || 0) - (a.season.totals[key] || 0)).slice(0, 5);
+  const top = (key) => players.players.filter((p) => (p.current || state.season !== state.seasons.current) && p.season.totals[key] !== null).sort((a, b) => (b.season.totals[key] || 0) - (a.season.totals[key] || 0)).slice(0, 5);
   const hero = next ? `<section class="hero" aria-label="Next match">
       <div class="kicker">${next.status === 'LIVE' ? 'Live now' : 'Next match'} · ${esc(next.competition)}${next.gameweek ? `, gameweek ${next.gameweek}` : ''}</div>
       <div class="fixture-board"><div class="team">${next.home ? 'Spurs' : esc(next.opponent)}</div>
@@ -161,8 +161,8 @@ VIEWS.overview = async () => {
       ${lineChart({ labels: team.matches.map((m) => m.opponentShort || m.opponent.slice(0, 3)), series: [{ name: 'xG for', color: 'var(--cyan)', values: team.matches.map((m) => m.xg) }, { name: 'xG against', color: 'var(--loss)', values: team.matches.map((m) => m.xga) }], height: 200, format: (v) => v.toFixed(1) })}
     </div>
     <div class="panel"><h2>Leading performers</h2>
-      <h3 class="muted small" style="font-family:var(--body);font-weight:500">Goals + assists (PL)</h3>
-      ${barList([...players.players].map((p) => ({ label: p.web, value: (p.season.totals.goals || 0) + (p.season.totals.assists || 0), href: `#/player/${p.id}` })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value).slice(0, 5)) || '<p class="na">No goal involvements yet.</p>'}
+      <h3 class="muted small" style="font-family:var(--body);font-weight:500">Goals + assists (PL)${state.season === state.seasons.current ? ', current squad' : ''}</h3>
+      ${barList(players.players.filter((p) => p.current || state.season !== state.seasons.current).map((p) => ({ label: p.web, value: (p.season.totals.goals || 0) + (p.season.totals.assists || 0), href: `#/player/${p.id}` })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value).slice(0, 5)) || '<p class="na">No goal involvements yet.</p>'}
       <h3 class="muted small" style="font-family:var(--body);font-weight:500;margin-top:14px">Expected goal involvement (xG + xA)</h3>
       ${barList(top('xgi').map((p) => ({ label: p.web, value: p.season.totals.xgi, href: `#/player/${p.id}` })), { format: (v) => fmtPlain(v, 2) })}
       ${src(players.source, players.generatedAt)}
@@ -222,7 +222,7 @@ VIEWS.players = async () => {
     <select class="ctl" id="f-pos" aria-label="Position"><option value="">All positions</option><option value="GK">Goalkeepers</option><option value="DEF">Defenders</option><option value="MID">Midfielders</option><option value="FWD">Forwards</option></select>
     <select class="ctl" id="f-comp" aria-label="Competition"><option value="season">Premier League</option><option value="seasonAll">All competitive</option><option value="seasonCups">Cups & Europe</option></select>
     <select class="ctl" id="f-mode" aria-label="Values"><option value="totals">Season totals</option><option value="per90">Per 90 minutes</option></select>
-    <select class="ctl" id="f-who" aria-label="Players"><option value="all">Everyone who played</option><option value="current">Current squad only</option></select>
+    <select class="ctl" id="f-who" aria-label="Players"><option value="current">Current squad</option><option value="all">Include loans & departures</option></select>
     <a class="btn ghost" href="#/compare">Compare players</a>
   </div>
   <div class="panel" style="padding:6px"><div class="table-wrap" id="lab-table"></div></div>
@@ -232,7 +232,7 @@ AFTER.players = async () => {
   const ps = await loadSeason('players.json');
   const draw = () => {
     const pos = document.getElementById('f-pos').value; const comp = document.getElementById('f-comp').value; const mode = document.getElementById('f-mode').value; const who = document.getElementById('f-who').value;
-    const rows = ps.players.filter((p) => (!pos || p.pos === pos) && (who === 'all' ? (p[comp]?.apps || 0) > 0 || p.current : p.current));
+    const rows = ps.players.filter((p) => (!pos || p.pos === pos) && (who === 'all' ? (p[comp]?.apps || 0) > 0 || p.current || p.membership === 'loan' : p.current));
     const cols = LAB_COLS.filter(([k]) => (mode === 'per90' ? k !== 'minutes' : true));
     const cell = (p, k, dp) => {
       const s = p[comp];
@@ -241,7 +241,7 @@ AFTER.players = async () => {
       return `<td class="r" data-v="${v ?? ''}" data-label="${esc(k)}">${fmt(v, mode === 'per90' ? 2 : dp)}</td>`;
     };
     document.getElementById('lab-table').innerHTML = `<table data-sortable class="stack"><thead><tr><th class="sortable sticky-col">Player</th><th class="sortable">Pos</th><th class="sortable r">Apps</th>${mode === 'per90' ? '<th class="sortable r">Min</th>' : ''}${cols.map(([, l]) => `<th class="sortable r">${l}</th>`).join('')}</tr></thead>
-      <tbody>${rows.map((p) => `<tr class="clickable" data-href="#/player/${p.id}"><td class="sticky-col" data-v="${esc(p.web)}"><a href="#/player/${p.id}">${esc(p.web)}</a>${p.current ? '' : ' <span class="faint tiny">left</span>'}${p.status && p.status !== 'a' ? ` <span class="tiny" style="color:var(--warn)">${esc(p.statusLabel)}</span>` : ''}</td><td data-v="${p.pos}" data-label="Pos">${p.pos}</td><td class="r" data-v="${p[comp]?.apps ?? ''}" data-label="Apps">${p[comp]?.apps ?? 0}</td>${mode === 'per90' ? `<td class="r" data-v="${p[comp]?.totals.minutes ?? ''}" data-label="Min">${p[comp]?.totals.minutes ?? 0}</td>` : ''}${cols.map(([k, , dp]) => cell(p, k, dp)).join('')}</tr>`).join('')}</tbody></table>`;
+      <tbody>${rows.map((p) => `<tr class="clickable" data-href="#/player/${p.id}"><td class="sticky-col" data-v="${esc(p.web)}"><a href="#/player/${p.id}">${esc(p.web)}</a>${p.current ? '' : ` <span class="faint tiny">${esc(p.membershipLabel || 'former')}</span>`}${p.status && p.status !== 'a' ? ` <span class="tiny" style="color:var(--warn)">${esc(p.statusLabel)}</span>` : ''}</td><td data-v="${p.pos}" data-label="Pos">${p.pos}</td><td class="r" data-v="${p[comp]?.apps ?? ''}" data-label="Apps">${p[comp]?.apps ?? 0}</td>${mode === 'per90' ? `<td class="r" data-v="${p[comp]?.totals.minutes ?? ''}" data-label="Min">${p[comp]?.totals.minutes ?? 0}</td>` : ''}${cols.map(([k, , dp]) => cell(p, k, dp)).join('')}</tr>`).join('')}</tbody></table>`;
     const t = document.querySelector('#lab-table table');
     t.querySelectorAll('td[data-label]').forEach((td, i) => { const th = t.tHead.rows[0].cells[td.cellIndex]; if (th) td.dataset.label = th.textContent; void i; });
     sortableTable(t);
@@ -275,7 +275,7 @@ VIEWS.player = async (id) => {
   const matches = data.matches.filter((m) => (m.minutes || 0) > 0);
   const un = state.meta.unavailable;
   return `<div class="player-head">${photoHtml(p)}<div><h1 style="margin:0">${esc(p.name)}</h1>
-    <div class="facts"><span><strong>${esc(state.meta.posLabels[p.pos])}</strong></span>${p.squadNumber ? `<span>No. <strong>${p.squadNumber}</strong></span>` : ''}${p.age !== null ? `<span>Age <strong>${p.age}</strong>${p.birthDate ? ` (born ${esc(fmtDate(p.birthDate, { day: 'numeric', month: 'short', year: 'numeric' }))})` : ''}</span>` : ''}${p.nationality ? `<span>${esc(p.nationality)}</span>` : ''}${p.joinDate ? `<span>Joined <strong>${esc(fmtDate(p.joinDate, { month: 'short', year: 'numeric' }))}</strong></span>` : ''}<span>${p.current ? 'Current squad' : p.leftClub ? 'Left Spurs this season' : 'Archived season'}</span></div>
+    <div class="facts"><span><strong>${esc(state.meta.posLabels[p.pos])}</strong></span>${p.squadNumber ? `<span>No. <strong>${p.squadNumber}</strong></span>` : ''}${p.age !== null ? `<span>Age <strong>${p.age}</strong>${p.birthDate ? ` (born ${esc(fmtDate(p.birthDate, { day: 'numeric', month: 'short', year: 'numeric' }))})` : ''}</span>` : ''}${p.nationality ? `<span>${esc(p.nationality)}</span>` : ''}${p.joinDate ? `<span>Joined <strong>${esc(fmtDate(p.joinDate, { month: 'short', year: 'numeric' }))}</strong></span>` : ''}<span>${p.current ? 'Current squad' : p.membershipLabel ? `<strong style="color:var(--warn)">${esc(p.membershipLabel)}</strong>${p.membershipNote ? ` — ${esc(p.membershipNote)}` : ''}` : 'Archived season'}</span></div>
     ${p.status && p.status !== 'a' ? `<p class="small" style="color:var(--warn);margin:6px 0 0">${esc(p.statusLabel)}${p.news ? ` — ${esc(p.news)}` : ''}${p.chanceNext !== null ? ` (chance of playing next round: ${p.chanceNext}%)` : ''}</p>` : ''}
     ${idx && idx.seasons.length > 1 ? `<p class="small muted" style="margin:6px 0 0">Other seasons: ${idx.seasons.filter((s) => s.season !== state.season).map((s) => `<a href="#" data-season="${s.season}">${s.season.replace('-', '/')}</a>`).join(', ')}</p>` : ''}</div></div>
   <div class="grid four section">
@@ -296,6 +296,8 @@ VIEWS.player = async (id) => {
     ${Object.entries(pct.percentiles).filter(([, v]) => v !== null).map(([k, v]) => { const d = statDefs().find((x) => x.key === k); return `<div class="pbar"><span>${esc(d ? d.label : k)} /90</span><div class="track"><div class="fill" style="width:${v}%"></div></div><span class="num" style="text-align:right">${v}</span></div>`; }).join('')}
     <p class="source">Per-90 values from FPL season totals (all clubs, so a mid-season signing's figures include his previous PL club). For xG conceded and goals conceded, a lower percentile is better.</p></div>` : ''}
   ${matches.length > 1 ? `<div class="panel section"><h2>Form, match by match</h2>${lineChart({ labels: matches.map((m) => fmtDate(m.kickoff, { day: 'numeric', month: 'short' })), series: isGK ? [{ name: 'Saves', color: 'var(--cyan)', values: matches.map((m) => m.saves ?? m.gkSaves) }, { name: 'Goals conceded', color: 'var(--loss)', values: matches.map((m) => m.gc) }] : [{ name: 'xG', color: 'var(--cyan)', values: matches.map((m) => m.xg) }, { name: 'xA', color: 'var(--draw)', values: matches.map((m) => m.xa) }], format: (v) => v.toFixed(isGK ? 0 : 1) })}</div>` : ''}
+  ${!isGK ? `<div class="panel section"><div class="section-head"><h2>Shot map</h2><select class="ctl" id="p-shot-match" aria-label="Match"><option value="">All matches (${(data.shots || []).length} shots)</option>${[...new Map((data.shots || []).map((x) => [x.matchId, x])).values()].map((x) => `<option value="${esc(x.matchId)}">${esc(fmtDate(x.kickoff, { day: 'numeric', month: 'short' }))} v ${esc(x.opponent)}</option>`).join('')}</select></div>
+    <div id="p-shots">${shotMap(data.shots || [])}</div><p class="source">Shot locations from FotMob via FPL Core Insights, all competitions; updated after every match. About one shot in five has no player attached in the source and is not shown.</p></div>` : ''}
   <div class="panel section"><h2>Match log</h2><div class="table-wrap"><table data-sortable class="stack"><thead><tr><th class="sortable">Date</th><th>Match</th><th>Comp</th><th class="sortable r">Min</th><th class="sortable r">G</th><th class="sortable r">A</th><th class="sortable r">xG</th><th class="sortable r">xA</th><th class="sortable r">Shots</th><th class="sortable r">Chances</th><th class="sortable r">Recov.</th>${isGK ? '<th class="sortable r">Saves</th>' : ''}</tr></thead><tbody>
     ${matches.slice().reverse().map((m) => `<tr><td data-v="${esc(m.kickoff)}" data-label="Date">${esc(fmtDate(m.kickoff, { day: 'numeric', month: 'short' }))}</td><td data-label="Match"><a href="#/match/${encodeURIComponent(m.matchId)}">${m.home ? 'v' : '@'} ${esc(oppName(m))}</a></td><td data-label="Comp">${esc(m.comp === 'Premier League' ? 'PL' : m.comp)}</td>${['minutes', 'goals', 'assists', 'xg', 'xa', 'shots', 'chancesCreated', 'recoveries', ...(isGK ? ['saves'] : [])].map((k) => `<td class="r" data-v="${m[k] ?? ''}" data-label="${k}">${fmt(m[k], ['xg', 'xa'].includes(k) ? 2 : 0)}</td>`).join('')}</tr>`).join('')}
   </tbody></table></div></div>
@@ -303,7 +305,12 @@ VIEWS.player = async (id) => {
 };
 let teamNames = null;
 const oppName = (m) => m.opponent || (m.opponentTeamId && teamNames?.get(m.opponentTeamId)) || 'opponent';
-AFTER.player = () => {
+AFTER.player = async (id) => {
+  const sel = document.getElementById('p-shot-match');
+  if (sel) {
+    const data = await loadSeason(`players/${id}.json`, state.season, { optional: true });
+    sel.addEventListener('change', () => { document.getElementById('p-shots').innerHTML = shotMap((data.shots || []).filter((x) => !sel.value || x.matchId === sel.value)); });
+  }
   view.querySelectorAll('[data-season]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); const s = document.getElementById('season'); s.value = a.dataset.season; s.dispatchEvent(new Event('change')); }));
 };
 const origPlayer = VIEWS.player;
@@ -448,7 +455,7 @@ VIEWS.squad = async () => {
     <select class="ctl" id="rep-player" aria-label="Player">${ps.filter((p) => sq.replacements[p.id]?.length).map((p) => `<option value="${p.id}">${esc(p.web)} (${p.pos})</option>`).join('')}</select>
     <div id="rep-out" style="margin-top:12px"></div>
     ${sq.notes.map((n) => `<p class="tiny faint">${esc(n)}</p>`).join('')}</div>
-  ${sq.departures.length ? `<div class="panel section"><h2>Left the club this season</h2>${sq.departures.map((d) => `<p><a href="#/player/${d.playerId}">${esc(d.name)}</a> <span class="small muted">— ${esc(d.note)}</span></p>`).join('')}<span class="label-observed">Confirmed by the Premier League player list</span></div>` : ''}`;
+  ${[['loans', 'Out on loan'], ['departures', 'Left the club this season'], ['unregistered', 'Not in the registered squad']].filter(([k]) => sq[k]?.length).map(([k, title]) => `<div class="panel section"><h2>${title}</h2>${sq[k].map((d) => `<div class="statrow"><span><a href="#/player/${d.playerId}">${esc(d.name)}</a> <span class="faint tiny">${esc(d.pos || '')}</span></span><span class="small muted" style="text-align:right">${esc(d.note || '')}${d.apps ? ` · ${d.apps} Spurs apps this season` : ''}</span></div>`).join('')}<p class="tiny faint">Status and note as published by the Premier League (FPL player list). These players are excluded from the current squad, depth charts and replacement analysis.</p></div>`).join('')}`;
 };
 AFTER.squad = async () => {
   const a = await loadSeason('analysis.json', state.season, { optional: true });
@@ -502,13 +509,37 @@ VIEWS.match = async (id) => {
     ], { right: f.opponent }) + `<p class="source">FotMob match statistics via FPL Core Insights (xG here is FotMob's; the season figures use FPL/Opta xG).</p>` : m.team && m.team.xg !== null ? `<div class="statlist"><div class="statrow"><span>Spurs xG (FPL)</span><span class="v">${fmtPlain(m.team.xg, 2)}</span></div><div class="statrow"><span>xG against (est.)</span><span class="v">${fmtPlain(m.team.xga, 2)}</span></div></div>` : '<p class="na">Team statistics are not available for this match.</p>'}</div>
   </div>
   ${notes.length ? `<div class="panel section"><div class="section-head"><h2>Post-match notes</h2><span class="label-analysis">Calculated analysis</span></div>${notes.map((n) => `<p>${esc(n)}</p>`).join('')}</div>` : ''}
+  ${d && (d.xgRace?.length || d.momentum?.length) ? `<div class="grid two section"><div class="panel"><h2>xG race</h2>${xgRace(d.xgRace, { opp: f.opponent })}<p class="source">Cumulative xG by minute (FotMob).</p></div><div class="panel"><h2>Momentum</h2>${momentumChart(d.momentum, { opp: f.opponent })}<p class="source">FotMob attacking-momentum index per minute.</p></div></div>` : ''}
   ${d?.shots?.length ? `<div class="grid two section"><div class="panel"><h2>Spurs shots</h2>${shotMap(d.shots.filter((s) => s.team === 'spurs'))}</div><div class="panel"><h2>${esc(f.opponent)} shots</h2>${shotMap(d.shots.filter((s) => s.team === 'opp'))}</div></div>` : ''}
-  <div class="panel section"><h2>Spurs players</h2>${m.lineup.length ? `<div class="table-wrap"><table data-sortable class="stack"><thead><tr><th class="sortable sticky-col">Player</th><th class="sortable">Role</th><th class="sortable r">Min</th><th class="sortable r">G</th><th class="sortable r">A</th><th class="sortable r">xG</th><th class="sortable r">xA</th><th class="sortable r">Shots</th><th class="sortable r">Chances</th><th class="sortable r">Passes</th><th class="sortable r">Tackles won</th><th class="sortable r">Recov.</th><th class="sortable r">FPL pts</th></tr></thead><tbody>
-    ${m.lineup.map((l) => `<tr><td class="sticky-col" data-v="${esc(l.name)}" data-label="Player"><a href="#/player/${l.playerId}">${esc(l.name)}</a> <span class="faint tiny">${esc(l.pos || '')}</span></td><td data-label="Role">${{ starter: 'Started', sub: 'Sub', unknown: '—' }[l.role]}</td>${['minutes', 'goals', 'assists', 'xg', 'xa', 'shots', 'chancesCreated', 'passesAcc', 'tacklesWon', 'recoveries', 'points'].map((k) => `<td class="r" data-v="${l[k] ?? ''}" data-label="${k}">${fmt(l[k], ['xg', 'xa'].includes(k) ? 2 : 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<p class="na">Player statistics are not available for this match yet.</p>'}
+  <div class="panel section"><div class="section-head"><h2>Spurs players</h2>${m.lineup.length ? `<div class="tabs" role="group" aria-label="Statistic group">${Object.keys(MATCH_TABS).map((t, i) => `<button data-mtab="${t}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>` : ''}</div>
+    <div id="m-lineup">${m.lineup.length ? lineupTable(m.lineup, 'Attacking') : '<p class="na">Player statistics are not available for this match yet.</p>'}</div>
     ${m.statsComplete === false && f.status !== 'SCHEDULED' ? '<p class="small" style="color:var(--warn)">Statistics may still be incomplete; the site re-checks automatically after each match.</p>' : ''}</div>
   ${m.videos?.length ? `<div class="panel section"><h2>Official video</h2><div class="grid three">${m.videos.map((v) => `<div class="video-card"><a href="${esc(v.url)}" target="_blank" rel="noopener"><img loading="lazy" alt="" src="${esc(v.thumbnail || '')}" style="width:100%;border-radius:8px"></a><span class="small">${esc(v.title)}</span><span class="badge ${v.relation === 'contextual' ? 'partial' : 'no'}">${v.relation === 'contextual' ? 'Contextual' : 'Illustrative'}</span></div>`).join('')}</div></div>` : ''}
   <p class="source">Sources: ${esc(m.source)}${d ? '; FPL Core Insights (FotMob match data)' : ''}. Built ${esc(fmtDateTime(m.generatedAt))} Bahrain.</p>`;
 };
+const MATCH_TABS = {
+  Attacking: [['minutes', 'Min'], ['goals', 'G'], ['assists', 'A'], ['xg', 'xG', 2], ['xa', 'xA', 2], ['shots', 'Shots'], ['sot', 'On target'], ['xgot', 'xGOT', 2], ['chancesCreated', 'Chances'], ['touchesBox', 'Box touches'], ['wasFouled', 'Fouled'], ['dispossessed', 'Dispossessed']],
+  Passing: [['minutes', 'Min'], ['touches', 'Touches'], ['passesAcc', 'Acc. passes'], ['passesAtt', 'Attempted'], ['finalThirdPasses', 'Final third'], ['crossesAcc', 'Acc. crosses'], ['longBallsAcc', 'Acc. long balls'], ['chancesCreated', 'Chances']],
+  Defending: [['minutes', 'Min'], ['tacklesWon', 'Tackles won'], ['interceptions', 'Interceptions'], ['blocks', 'Blocks'], ['clearances', 'Clearances'], ['recoveries', 'Recoveries'], ['duelsWon', 'Duels won'], ['duelsLost', 'Duels lost'], ['aerialWon', 'Aerials won'], ['dribbledPast', 'Dribbled past'], ['foulsCommitted', 'Fouls']],
+  Goalkeeping: [['minutes', 'Min'], ['saves', 'Saves (FPL)'], ['gkSaves', 'Saves (FotMob)'], ['savesInBox', 'Saves in box'], ['xgotFaced', 'xGOT faced', 2], ['goalsPrevented', 'Goals prevented', 2], ['highClaims', 'High claims'], ['sweeperActions', 'Sweeper actions'], ['gc', 'Conceded']],
+  FPL: [['minutes', 'Min'], ['points', 'Points'], ['bonus', 'Bonus'], ['bps', 'BPS'], ['influence', 'Influence', 1], ['creativity', 'Creativity', 1], ['threat', 'Threat', 1], ['defcon', 'Def. contribution']],
+};
+function lineupTable(lineup, tab) {
+  const cols = MATCH_TABS[tab];
+  const rows = tab === 'Goalkeeping' ? lineup.filter((l) => l.pos === 'GK') : lineup;
+  return `<div class="table-wrap"><table data-sortable class="stack"><thead><tr><th class="sortable sticky-col">Player</th><th class="sortable">Role</th>${cols.map(([, l]) => `<th class="sortable r">${l}</th>`).join('')}</tr></thead><tbody>
+    ${rows.map((l) => `<tr><td class="sticky-col" data-v="${esc(l.name)}" data-label="Player"><a href="#/player/${l.playerId}">${esc(l.name)}</a> <span class="faint tiny">${esc(l.pos || '')}</span></td><td data-label="Role">${{ starter: 'Started', sub: 'Sub', unknown: '—' }[l.role]}</td>${cols.map(([k, lab, dp]) => `<td class="r" data-v="${l[k] ?? ''}" data-label="${esc(lab)}">${fmt(l[k], dp || 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+AFTER.match = async (id) => {
+  if (!id) return;
+  const m = await loadSeason(`matches/${id}.json`, state.season, { optional: true });
+  if (!m || !m.lineup.length) return;
+  document.querySelectorAll('[data-mtab]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-mtab]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    const box = document.getElementById('m-lineup'); box.innerHTML = lineupTable(m.lineup, b.dataset.mtab); sortableTable(box.querySelector('table'));
+  }));
+};
+
 function postMatch(m) {
   const out = []; const f = m.fixture; const t = m.team; const adv = t?.adv;
   if (!f.score) return out;

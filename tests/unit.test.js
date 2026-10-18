@@ -98,3 +98,14 @@ test('credentials never appear in logs or the public site', () => {
     assert.equal(/X-Auth-Token|FOOTBALL_DATA_KEY|GITHUB_TOKEN|api[_-]?key\s*[:=]/i.test(t), false, `${f} must not reference credentials`);
   }
 });
+
+test('loans and departures are not in the current squad', async () => {
+  const { squadMembership } = await import('../pipeline/derive/build.js');
+  const teams = new Map([[19, { id: 19, name: 'Spurs' }], [7, { id: 7, name: 'Chelsea' }]]);
+  assert.equal(squadMembership({ team: 19, status: 'a' }, 19, teams).state, 'current');
+  assert.equal(squadMembership({ team: 19, status: 'i', news: 'Knee injury' }, 19, teams).state, 'current');
+  assert.equal(squadMembership({ team: 19, status: 'u', news: 'Has joined Juventus on loan for the rest of the season' }, 19, teams).state, 'loan');
+  assert.equal(squadMembership({ team: 19, status: 'u', news: 'Has joined Atletico Madrid permanently' }, 19, teams).state, 'left');
+  assert.equal(squadMembership({ team: 7, status: 'a' }, 19, teams).note, 'Now at Chelsea');
+  assert.equal(squadMembership({ team: 19, status: 'u', news: 'not included in squad.' }, 19, teams).state, 'unregistered');
+});

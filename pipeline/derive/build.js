@@ -47,7 +47,7 @@ export function buildSeason(input) {
   const {
     season, generatedAt, isCurrent = false, teams, spursId, fplFixtures, elements, histories,
     cupMatches = [], prevFixtures = [], videos = [], regions = new Map(), aliases = {}, sourceRef,
-    detail = { matches: [], players: [], shots: [] }, clubCode = null, spursElementIds = new Set(),
+    detail = { matches: [], players: [], shots: [], momentum: [], xgMinute: [] }, clubCode = null, spursElementIds = new Set(),
   } = input;
   const teamById = new Map(teams.map((t) => [t.id, t]));
   const nameOf = (id) => { const e = elements.get(id); return e ? (e.web_name || `${e.first_name} ${e.second_name}`) : `Player ${id}`; };
@@ -95,6 +95,8 @@ export function buildSeason(input) {
   const group = (rows, key) => { const m = new Map(); for (const r of rows) { if (!m.has(r[key])) m.set(r[key], []); m.get(r[key]).push(r); } return m; };
   const fcPlayersByMatch = group(detail.players, 'match_id');
   const fcShotsByMatch = group(detail.shots, 'match_id');
+  const fcMomentumByMatch = group(detail.momentum || [], 'match_id');
+  const fcXgMinuteByMatch = group(detail.xgMinute || [], 'match_id');
   const fcByFixture = new Map(); // fixture id -> { row, home }
   for (const d of detail.matches) {
     const m = d.row;
@@ -104,8 +106,14 @@ export function buildSeason(input) {
     const home = hc === clubCode ? true : ac === clubCode ? false : slugLeftIsClub;
     const oppTeam = teamByCode.get(home ? ac : hc);
     const processed = m.player_stats_processed === 'True';
-    const shots = (fcShotsByMatch.get(m.match_id) || []).map((x) => ({ ...shotRow(x), team: (x.is_home === 'True') === home ? 'spurs' : 'opp' }));
-    const det = { source: 'fplcore', key: m.match_id, spurs: teamSide(m, home ? 'home' : 'away'), opp: teamSide(m, home ? 'away' : 'home'), shots, processed };
+    const shots = (fcShotsByMatch.get(m.match_id) || []).map((x) => { const sh = shotRow(x); return { ...sh, player: sh.player || (sh.elementId !== null && elements.has(sh.elementId) ? nameOf(sh.elementId) : null), team: (x.is_home === 'True') === home ? 'spurs' : 'opp' }; });
+    // Momentum: the source's per-minute attacking-momentum value is positive for the
+    // home side; it is flipped so positive always means Spurs.
+    const momentum = (fcMomentumByMatch.get(m.match_id) || []).map((x) => ({ minute: num(x.minute), value: num(x.value) === null ? null : (home ? 1 : -1) * num(x.value) }))
+      .filter((x) => x.minute !== null && x.value !== null).sort((a, b) => a.minute - b.minute);
+    const xgRace = (fcXgMinuteByMatch.get(m.match_id) || []).map((x) => ({ minute: num(x.minute), spurs: num(home ? x.home_cumulative_xg : x.away_cumulative_xg), opp: num(home ? x.away_cumulative_xg : x.home_cumulative_xg) }))
+      .filter((x) => x.minute !== null).sort((a, b) => a.minute - b.minute);
+    const det = { source: 'fplcore', key: m.match_id, spurs: teamSide(m, home ? 'home' : 'away'), opp: teamSide(m, home ? 'away' : 'home'), shots, processed, momentum, xgRace };
     if (comp === 'Premier League') {
       const f = fixtures.find((x) => x.source === 'fpl' && x.gameweek === num(m.gameweek) && oppTeam && x.opponentTeamId === oppTeam.id)
         || fixtures.find((x) => x.source === 'fpl' && x.kickoff && m.kickoff_time && Math.abs(Date.parse(x.kickoff) - Date.parse(`${m.kickoff_time}Z`)) < 48 * 3600e3 && oppTeam && x.opponentTeamId === oppTeam.id);
@@ -206,7 +214,11 @@ export function buildSeason(input) {
     const agg = aggregate(rows.filter((r) => r.comp === 'Premier League'));
     const aggAll = aggregate(rows.filter((r) => r.comp !== 'Friendly'));
     const aggCups = aggregate(rows.filter((r) => r.comp !== 'Friendly' && r.comp !== 'Premier League'));
-    const current = isCurrent && num(e.team) === spursId && !(e.removed === true || e.removed === 'True');
+    const membership = isCurrent ? squadMembership(e, spursId, teamById) : { state: 'archived', label: null, note: null };
+    const current = membership.state === 'current';
+    // A permanent departure with no Spurs minutes this season has nothing to show here;
+    // the player stays reachable through earlier seasons.
+    if (membership.state === 'left' && !rows.some((r) => (r.minutes || 0) > 0)) continue;
     const code = num(e.code) ?? `s${season}-${elementId}`;
     const region = regions.get(num(e.region));
     const status = current ? e.status || null : null;
@@ -215,7 +227,8 @@ export function buildSeason(input) {
       knownName: e.known_name || null, pos, birthDate: e.birth_date && e.birth_date !== 'None' ? e.birth_date : null,
       age: ageOn(e.birth_date), nationality: region ? region.name : null,
       squadNumber: num(e.squad_number), joinDate: e.team_join_date && e.team_join_date !== 'None' ? e.team_join_date : null,
-      photo: e.code ? String(e.code) : null, current, leftClub: isCurrent && !current && rows.some((r) => (r.minutes || 0) > 0),
+      photo: e.code ? String(e.code) : null, current, membership: membership.state, membershipLabel: membership.label, membershipNote: membership.note,
+      leftClub: isCurrent && !current,
       status, statusLabel: statusLabel(status), news: current && e.news ? e.news : null, newsAdded: current ? e.news_added || null : null,
       chanceNext: current ? num(e.chance_of_playing_next_round) : null,
       aliases: [...new Set([e.web_name, e.known_name, e.first_name, e.second_name, ...(aliases[String(code)] || []), ...(aliases[e.second_name] || []), ...(aliases[e.web_name] || [])].filter(Boolean))],
@@ -223,7 +236,7 @@ export function buildSeason(input) {
       lastMatch: rows.length ? rows[rows.length - 1].matchId : null,
     };
     players.push(p);
-    playerFiles[`players/${p.id}.json`] = { season, generatedAt, source: sourceRef, player: p, matches: rows };
+    playerFiles[`players/${p.id}.json`] = { season, generatedAt, source: sourceRef, player: p, matches: rows, shots: [] };
   }
   players.sort((a, b) => (b.season.totals.minutes || 0) - (a.season.totals.minutes || 0));
 
@@ -253,6 +266,16 @@ export function buildSeason(input) {
     f.statsComplete = statsComplete;
   }
 
+  // Each player's shots (with locations) for the profile shot map.
+  const fileByElement = new Map(players.map((p) => [p.elementId, playerFiles[`players/${p.id}.json`]]));
+  for (const f of fixtures) {
+    if (!f.detail) continue;
+    for (const sh of f.detail.shots) {
+      if (sh.team !== 'spurs' || sh.elementId === null) continue;
+      const pf = fileByElement.get(sh.elementId);
+      if (pf) pf.shots.push({ ...sh, matchId: f.id, opponent: f.opponent, competition: f.competition, kickoff: f.kickoff });
+    }
+  }
   for (const f of fixtures) { f.hasDetail = Boolean(f.detail); delete f.detail; }
 
   // ---- Table ----
@@ -310,8 +333,27 @@ function pick(r) {
 }
 const posOrder = (p) => ({ GK: 0, DEF: 1, MID: 2, FWD: 3 }[p] ?? 4);
 
+// Squad membership from the Premier League's own player list. FPL keeps players who
+// left or went on loan attached to their old club with status "u" and a note such as
+// "Has joined Juventus on loan"; those are not part of the current squad.
+export function squadMembership(e, spursId, teamById) {
+  const removed = e.removed === true || e.removed === 'True';
+  const news = String(e.news || '');
+  if (num(e.team) !== spursId) {
+    const now = teamById.get(num(e.team));
+    return { state: 'left', label: 'Left the club', note: now ? `Now at ${now.name}` : 'No longer listed by the Premier League' };
+  }
+  if (removed) return { state: 'left', label: 'Left the club', note: 'Removed from the Premier League player list' };
+  if (e.status === 'u') {
+    if (/on loan/i.test(news)) return { state: 'loan', label: 'Out on loan', note: news };
+    if (/permanent|has left|released|retire|contract (terminated|ended)|joined/i.test(news)) return { state: 'left', label: 'Left the club', note: news };
+    return { state: 'unregistered', label: 'Not in the registered squad', note: news || 'Listed as unavailable by the Premier League' };
+  }
+  return { state: 'current', label: 'Current squad', note: null };
+}
+
 export function statusLabel(s) {
-  return { a: 'Available', d: 'Doubtful', i: 'Injured', s: 'Suspended', u: 'Unavailable / left', n: 'Not in squad (loan / ineligible)' }[s] || null;
+  return { a: 'Available', d: 'Doubtful', i: 'Injured', s: 'Suspended', u: 'Not in squad', n: 'Not in squad (loan / ineligible)' }[s] || null;
 }
 
 const sum = (rows, k) => {

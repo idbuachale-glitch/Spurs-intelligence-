@@ -48,14 +48,18 @@ export function parseCsv(text) {
 export async function fetchRound(season, tournament, gw, clubCode, clubSlug = 'tottenham-hotspur') {
   const base = `data/${seasonDir(season)}/By Tournament/${tournament}/${gw}`;
   const matches = (await fetchCsv(`${base}/matches.csv`)).filter((m) => num(m.home_team) === clubCode || num(m.away_team) === clubCode || String(m.match_id).includes(clubSlug));
-  if (!matches.length) return { matches: [], players: [], shots: [] };
+  if (!matches.length) return { matches: [], players: [], shots: [], momentum: [], xgMinute: [] };
   const ids = new Set(matches.map((m) => m.match_id));
   const anyProcessed = matches.some((m) => m.player_stats_processed === 'True');
-  const [players, shots] = await Promise.all([
+  const statsDone = matches.some((m) => m.stats_processed === 'True');
+  const [players, shots, momentum, xgMinute] = await Promise.all([
     anyProcessed ? fetchCsv(`${base}/playermatchstats.csv`).catch(() => []) : [],
-    matches.some((m) => m.stats_processed === 'True') ? fetchCsv(`${base}/shots.csv`).catch(() => []) : [],
+    statsDone ? fetchCsv(`${base}/shots.csv`).catch(() => []) : [],
+    statsDone ? fetchCsv(`${base}/momentum.csv`).catch(() => []) : [],
+    statsDone ? fetchCsv(`${base}/xg_by_minute.csv`).catch(() => []) : [],
   ]);
-  return { matches, players: players.filter((p) => ids.has(p.match_id)), shots: shots.filter((s) => ids.has(s.match_id)) };
+  const mine = (rows) => rows.filter((r) => ids.has(r.match_id));
+  return { matches, players: mine(players), shots: mine(shots), momentum: mine(momentum), xgMinute: mine(xgMinute) };
 }
 
 // ---------- Normalisation ----------

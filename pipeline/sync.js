@@ -151,12 +151,12 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
   } else {
     status.sources.fplcore = { label: fc.label, disabled: true, note: 'Disabled (SUPPLEMENTARY_STATS=off). Shots, passing, take-ons, duels and cup player stats are hidden.' };
   }
-  const detail = { matches: [], players: [], shots: [] };
+  const detail = { matches: [], players: [], shots: [], momentum: [], xgMinute: [] };
   if (fc.enabled()) for (const f of listFiles(fcDir)) {
     const r = readJson(path.join(fcDir, f));
     if (!r) continue;
     for (const m of r.matches) detail.matches.push({ tournament: r.tournament, gw: r.gw, row: m });
-    detail.players.push(...r.players); detail.shots.push(...r.shots);
+    detail.players.push(...r.players); detail.shots.push(...r.shots); detail.momentum.push(...(r.momentum || [])); detail.xgMinute.push(...(r.xgMinute || []));
   }
 
   // ---------------- Other competitions (TheSportsDB) ----------------
@@ -368,6 +368,7 @@ export function buildPlayerIndex(D, seasonsList) {
       p.aliases.forEach((a) => e.aliases.add(a));
       e.seasons.push({ season: s, apps: p.season.apps, minutes: p.season.totals.minutes, goals: p.season.totals.goals });
       if (p.current) e.current = true;
+      if (s === seasonsList[0] && p.membershipLabel && !e.membershipLabel) e.membershipLabel = p.membershipLabel;
       idx.set(p.id, e);
     }
   }

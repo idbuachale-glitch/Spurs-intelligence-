@@ -90,7 +90,7 @@ export const RATES = [
 // What the free sources do NOT provide. Shown in the UI so gaps are never hidden.
 export const UNAVAILABLE = {
   attacking: ['Shots', 'Shots on target', 'Shot conversion %', 'Key passes / chances created', 'Big chances', 'Touches in opposition box', 'Take-ons attempted / successful', 'Take-on success %', 'Dispossessed', 'Carries & progressive carries', 'Fouls won'],
-  passing: ['Passes & accurate passes', 'Pass accuracy %', 'Progressive passes', 'Passes into final third / box', 'Through balls, crosses, long balls', 'Possession lost', 'Touches'],
+  passing: ['Pass maps & pass combinations (passer → receiver)', 'Heat maps / touch locations', 'Progressive passes', 'Passes into final third / box', 'Through balls, crosses, long balls', 'Possession lost', 'Touches'],
   defensive: ['Tackles won %', 'Duels & aerial duels', 'Fouls committed', 'Pressures'],
   goalkeeping: ['Post-shot xG / goals prevented (PSxG)', 'Distribution & passing'],
   identity: ['Height', 'Preferred foot', 'Contract expiry'],
