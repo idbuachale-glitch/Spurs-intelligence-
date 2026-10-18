@@ -215,19 +215,19 @@ export function tactical({ allTeamMatches, team, players, season }) {
   });
 
   const areas = [
-    { area: 'Chance creation & attacking patterns', measurable: 'partial', evidence: 'Team and player xG / xA per match, share of chance quality by position group.', missing: 'Shot locations, key passes, final-third entries.' },
-    { area: 'Finishing', measurable: 'yes', evidence: 'Goals vs xG for team and players.', missing: 'Shot counts, on-target %.' },
-    { area: 'Defensive solidity', measurable: 'partial', evidence: 'Goals conceded vs estimated xG against, clean sheets.', missing: 'Shots conceded, counter-attacks conceded.' },
-    { area: 'Defensive activity', measurable: 'partial', evidence: 'Tackles, clearances/blocks/interceptions and recoveries per match.', missing: 'Pressures, PPDA, duel success. High defensive-action counts can mean less possession, not better pressing.' },
-    { area: 'Goalkeeping', measurable: 'partial', evidence: 'Saves, goals conceded vs pre-shot xG conceded.', missing: 'Post-shot xG, distribution, sweeping.' },
+    { area: 'Chance creation & attacking patterns', measurable: 'yes', evidence: 'Team and player xG / xA, shots and shot locations (shot maps), chances created, passes into the final third, touches in the box.', missing: 'Pass-by-pass routes into the box.' },
+    { area: 'Finishing', measurable: 'yes', evidence: 'Goals vs xG, shots, shots on target, xG on target (xGOT), big chances missed.', missing: '' },
+    { area: 'Defensive solidity', measurable: 'partial', evidence: 'Goals and shots conceded, xG against, clean sheets, opponent shot maps.', missing: 'Counter-attacks conceded are not yet broken out (the shot data marks fast breaks, so this can be added).' },
+    { area: 'Defensive activity', measurable: 'partial', evidence: 'Tackles and tackle success, interceptions, recoveries, duels and duel success, high-intensity running (pressing volume, estimated).', missing: 'Individual pressures and true PPDA (an estimate from passes and defensive actions can be added).' },
+    { area: 'Goalkeeping', measurable: 'yes', evidence: 'Saves, post-shot xG faced and goals prevented, distribution (passes, long balls), sweeper actions, high claims.', missing: '' },
     { area: 'Selection & rotation', measurable: 'yes', evidence: 'Starts, minutes concentration, players used per match.', missing: '' },
-    { area: 'Build-up structure & goalkeeper involvement', measurable: 'no', evidence: '', missing: 'Requires pass-level event data (not available free).' },
-    { area: 'Press resistance & turnovers', measurable: 'no', evidence: '', missing: 'Requires possession/turnover event data.' },
+    { area: 'Build-up structure & goalkeeper involvement', measurable: 'partial', evidence: 'Passes in own vs opposition half, long-ball share, goalkeeper passes and long balls.', missing: 'Pass maps and build-up sequences need paid event data.' },
+    { area: 'Press resistance & turnovers', measurable: 'partial', evidence: 'Times dispossessed, possession lost (estimate), pass accuracy.', missing: 'Where turnovers happen and what follows need paid event data.' },
     { area: 'Positional rotations, overloads, third-man combinations', measurable: 'no', evidence: '', missing: 'Requires tracking or detailed event sequences.' },
     { area: 'Width, depth & half-space occupation', measurable: 'no', evidence: '', missing: 'Requires positional/tracking data.' },
     { area: 'Pressing triggers & counter-pressing', measurable: 'no', evidence: '', missing: 'Requires pressure events or tracking data.' },
     { area: 'Defensive transitions', measurable: 'no', evidence: '', missing: 'Requires possession-sequence data.' },
-    { area: 'Set pieces', measurable: 'no', evidence: '', missing: 'Goal/shot situation types are not in the free data.' },
+    { area: 'Set pieces', measurable: 'partial', evidence: 'Set-piece xG, shots and goals (from shot situations: corners, free kicks, penalties) and set-piece takers.', missing: 'Routines and delivery locations.' },
     { area: 'In/out-of-possession formations', measurable: 'no', evidence: '', missing: 'Line-up formations are not in the free data.' },
   ];
   return { season, eras: eraRows, deZerbi: { matches: dz.length, rolling }, positionShare: posShare, roles, areas, unavailableTeamMetrics: UNAVAILABLE.team };
