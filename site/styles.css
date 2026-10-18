@@ -368,3 +368,7 @@ table.sit td.wrap { min-width: 0; }
 .panel table.sit th, .panel table.sit td, .panel table.sim th, .panel table.sim td { padding-left: 3px; padding-right: 3px; }
 .cl-s { display: none; }
 @media (max-width: 480px) { .cl-l { display: none; } .cl-s { display: inline; } .hide-xs { display: none; } }
+
+/* Club crest in the header (official image, loaded from the Premier League's CDN) */
+.crest { flex: none; object-fit: contain; filter: drop-shadow(0 0 6px rgba(60, 232, 255, .25)); }
+.unofficial { font-size: 0.68rem; line-height: 1.35; color: var(--faint); margin: 6px 8px 0; }

@@ -871,6 +871,7 @@ VIEWS.sources = async () => {
   const m = state.meta;
   const rows = Object.entries(st.sources).map(([k, s]) => `<tr><td class="sticky-col wrap" data-label="Source">${esc(s.label || k)}</td><td data-label="Status">${s.disabled ? '<span class="badge partial">Off</span>' : s.consecutiveFailures ? `<span class="badge ${s.consecutiveFailures >= 6 ? 'no' : 'partial'}">Failing ×${s.consecutiveFailures}</span>` : '<span class="badge yes">Healthy</span>'}</td><td data-label="Last success">${s.lastSuccess ? `${esc(fmtDateTime(s.lastSuccess))}<br><span class="faint tiny">${esc(ago(s.lastSuccess))}</span>` : '<span class="na">never</span>'}</td><td class="small muted wrap" data-label="Notes">${esc(s.disabled ? s.note : s.lastError || '')}</td></tr>`).join('');
   return `<h1>Data sources & settings</h1>
+  <p class="small muted">Spurs Intelligence is an unofficial fan site and is not affiliated with Tottenham Hotspur. The club crest is © Tottenham Hotspur and is shown from the Premier League's image server.</p>
   <div class="panel"><h2>Source health</h2><div class="table-wrap"><table class="stack"><thead><tr><th>Source</th><th>Status</th><th>Last success</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="source">Last automatic run ${esc(fmtDateTime(st.lastRun))} Bahrain (${esc(ago(st.lastRun))}). If a source fails, the last valid data stays on the site and retries continue automatically; after six failures in a row the repository owner gets an email from GitHub.</p></div>
   <div class="grid two section">
