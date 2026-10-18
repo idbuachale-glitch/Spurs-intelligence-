@@ -133,6 +133,13 @@ test('strengths and weaknesses compare a player with his position group', async 
   assert.equal(none.metrics.length, 0);
 });
 
+test('goalkeeper passing comes from the goalkeeper columns, never a fabricated zero', async () => {
+  const { playerRow } = await import('../pipeline/adapters/fplcore.js');
+  const rec = new Set(['accurate_passes', 'accurate_long_balls', 'gk_accurate_passes']);
+  const gk = playerRow({ player_id: '496', match_id: 'm', minutes_played: '90', gk_accurate_passes: '16', gk_accurate_long_balls: '1' }, true, rec);
+  assert.equal(gk.passesAcc, 16); assert.equal(gk.longBallsAcc, 1);
+});
+
 test('credentials never appear in logs or the public site', () => {
   assert.equal(redact('https://www.thesportsdb.com/api/v1/json/SECRETKEY/eventslast.php?id=1').includes('SECRETKEY'), false);
   const siteFiles = fs.readdirSync(path.join(ROOT, 'site')).filter((f) => /\.(js|html)$/.test(f));

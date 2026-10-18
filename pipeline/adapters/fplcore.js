@@ -113,6 +113,12 @@ export function playerRow(r, matchProcessed, recorded = null) {
     out[k] = v !== null ? v : (played && columnRecorded && !PCT_FIELDS.has(f) && !['xgot', 'xgotFaced', 'goalsPrevented', 'distance', 'sprints'].includes(k) ? 0 : null);
   }
   if (played) { out.goals ??= 0; out.assists ??= 0; }
+  // Goalkeepers' passing is recorded in goalkeeper-only columns; the outfield passing
+  // columns are blank for them and must not be read as zero.
+  if (num(r.gk_accurate_passes) !== null || num(r.gk_accurate_long_balls) !== null) {
+    if (num(r.accurate_passes) === null) out.passesAcc = num(r.gk_accurate_passes);
+    if (num(r.accurate_long_balls) === null) out.longBallsAcc = num(r.gk_accurate_long_balls);
+  }
   // Attempts are derivable only when a success count and a success % are both present.
   const att = (succ, pctField) => { const p = num(r[pctField]); return succ > 0 && p > 0 ? Math.round(succ / (p / 100)) : null; };
   out.dribbleAtt = att(out.dribbles, 'successful_dribbles_percent');

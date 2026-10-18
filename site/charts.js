@@ -117,7 +117,7 @@ export function pairBars(rows, { left = 'Spurs', right = 'Opponent' } = {}) {
 }
 
 // Half-pitch shot map. Source coordinates: x = metres from goal line, y = 0–100 across.
-export function shotMap(shots, { title = 'Shot map' } = {}) {
+export function shotMap(shots, { title = 'Shot map', matchXg = null } = {}) {
   if (!shots.length) return '<div class="empty small">No shot locations recorded.</div>';
   const W = 340; const L = 52.5; const scale = W / 68; const H = L * scale;
   const px = (s) => (s.y / 100) * W; const py = (s) => s.x * scale;
@@ -133,7 +133,7 @@ export function shotMap(shots, { title = 'Shot map' } = {}) {
       <title>${esc(s.player || 'Unknown')} ${s.minute ?? ''}' — ${esc(s.outcome)} (${esc(s.situation)}), xG ${s.xg ?? '—'}</title></circle>`;
   }).join('');
   return `<div class="chart"><svg viewBox="0 -6 ${W} ${H + 8}" role="img" aria-label="${esc(title)}"><rect x="0" y="0" width="${W}" height="${H}" fill="var(--bg-2)" rx="6"/>${box}${dots}</svg>
-    <div class="legend"><span><i style="background:var(--cyan);height:10px;width:10px;border-radius:50%"></i>Goal</span><span><i style="border:1.4px solid var(--muted);height:10px;width:10px;border-radius:50%;background:none"></i>No goal</span><span>Circle size = xG</span></div></div>`;
+    <div class="legend"><span><i style="background:var(--cyan);height:10px;width:10px;border-radius:50%"></i>Goal</span><span><i style="border:1.4px solid var(--muted);height:10px;width:10px;border-radius:50%;background:none"></i>No goal</span><span>Circle size = xG</span></div>${shotSummary(shots, matchXg)}</div>`;
 }
 
 export function barList(items, { max = null, format = (v) => v } = {}) {
@@ -255,4 +255,13 @@ export function radar(axes, { aName = 'Player', bName = null } = {}) {
   g += shape('a', 'var(--cyan)', 0.22);
   return `<div class="chart" style="max-width:420px;margin:0 auto"><svg viewBox="-95 -14 ${S + 190} ${S + 28}" role="img" aria-label="Radar chart">${g}</svg>
     <div class="legend" style="justify-content:center"><span><i style="background:var(--cyan)"></i>${esc(aName)}</span>${bName ? `<span><i style="background:var(--draw)"></i>${esc(bName)}</span>` : ''}<span><i style="background:var(--faint)"></i>dashed ring = league average (50th)</span></div></div>`;
+}
+
+// Totals under a shot map. The source computes shot-level xG separately from its match
+// total, so when both are known and differ, both are shown rather than hiding the gap.
+function shotSummary(shots, matchXg) {
+  const sum = shots.reduce((a, s) => a + (s.xg || 0), 0); const goals = shots.filter((s) => /goal/i.test(s.outcome || '')).length;
+  let t = `${shots.length} shot${shots.length === 1 ? '' : 's'} · ${goals} goal${goals === 1 ? '' : 's'} · xG of these shots ${sum.toFixed(2)}`;
+  if (matchXg !== null && matchXg !== undefined && Math.abs(matchXg - sum) >= 0.05) t += `. The source's match total is ${Number(matchXg).toFixed(2)} xG; its shot-by-shot and match figures are calculated separately and can differ slightly`;
+  return `<p class="source">${esc(t)}.</p>`;
 }
