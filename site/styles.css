@@ -491,3 +491,4 @@ ol.leaders .v { font-weight: 700; font-family: var(--display); }
 .form-strip .form-cr { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
 .form-strip .form-cr .tcrest { margin: 0; width: 20px; height: 20px; }
 h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
+@media (max-width: 760px) { table.stack td.sticky-col { justify-content: flex-start; font-size: 1rem; } table.stack td.sticky-col::before { display: none; } }

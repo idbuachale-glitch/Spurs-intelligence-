@@ -491,7 +491,7 @@ VIEWS.team = async () => {
     const list = squadPs.filter((p) => p.current && p.setPieces?.[k]).sort((a, b) => a.setPieces[k] - b.setPieces[k]);
     return list.length ? `<div class="statrow"><span>${l}</span><span class="small" style="text-align:right">${list.slice(0, 3).map((p, i) => `${i ? '' : '<strong>'}<a href="#/player/${p.id}">${esc(p.web)}</a>${i ? '' : '</strong>'}`).join(' → ')}</span></div>` : '';
   }).join('');
-  const blockRow = (name, b) => `<tr><td class="sticky-col">${name}</td><td class="r">${b.n}</td><td class="r">${b.w}-${b.d}-${b.l}</td><td class="r">${b.n ? (b.points / b.n).toFixed(2) : '—'}</td><td class="r">${b.gf ?? 0}–${b.ga ?? 0}</td><td class="r">${fmt(b.perMatch.xg.value, 2)}</td><td class="r">${fmt(b.perMatch.xga.value, 2)}</td><td class="r">${b.cleanSheets}</td></tr>`;
+  const blockRow = (name, b) => `<tr><td class="sticky-col" data-label="">${name}</td><td class="r" data-label="Played">${b.n}</td><td class="r" data-label="Won-drawn-lost">${b.w}-${b.d}-${b.l}</td><td class="r" data-label="Points per game">${b.n ? (b.points / b.n).toFixed(2) : '—'}</td><td class="r" data-label="Goals for–against">${b.gf ?? 0}–${b.ga ?? 0}</td><td class="r" data-label="xG per game">${fmt(b.perMatch.xg.value, 2)}</td><td class="r" data-label="xG against per game">${fmt(b.perMatch.xga.value, 2)}</td><td class="r" data-label="Clean sheets">${b.cleanSheets}</td></tr>`;
   const pm = (k) => adv?.perMatch[k];
   return `<h1>Team statistics</h1>
   ${team.leagueRanks && Object.keys(team.leagueRanks.metrics || {}).length ? `<section style="margin-bottom:22px"><div class="section-head"><h2>Where Spurs rank</h2><span class="muted small">Per-match averages, all 20 clubs</span></div>
