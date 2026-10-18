@@ -2,6 +2,7 @@
 // Used identically by the live sync and by the historical backfill.
 import { STATS, POS, normalizePos, playerMatch, aggregate, resultOf, leagueTable, round, ageOn } from './stats.js';
 import { num } from '../lib/validate.js';
+import { matchBreakdown } from './breakdown.js';
 import { recordedColumns, playerRow as fcPlayerRow, teamSide, shotRow, tournamentLabel, opponentFromSlug } from '../adapters/fplcore.js';
 
 const TEAM_ALIASES = {
@@ -286,6 +287,12 @@ export function buildSeason(input) {
   // ---- Team intelligence ----
   const teamSummary = summariseTeam(teamMatches, fixtures);
   teamSummary.leagueRanks = leagueAdvancedRanks(detail.leagueMatches || [], teams, clubCode);
+  for (const mf of Object.values(matchFiles)) {
+    if (!mf.fixture.score) continue;
+    mf.breakdown = matchBreakdown({ match: mf, teamSummary, seasonPlayers: players });
+    const fx = fixtures.find((x) => x.id === mf.fixture.id);
+    if (fx && mf.breakdown) fx.hasBreakdown = true;
+  }
   teamSummary.shotZones = shotZones(Object.values(matchFiles).filter((m) => m.fixture.competition === 'Premier League' && m.detail).flatMap((m) => m.detail.shots));
 
   // ---- Video evidence linking ----

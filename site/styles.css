@@ -286,3 +286,14 @@ select.ctl, input.ctl { background: var(--panel); border: 1px solid var(--line);
 .readout strong { font-family: var(--display); font-size: 1.6rem; font-weight: 600; }
 .pitch-wrap { max-width: 460px; margin: 0 auto; }
 .illustrative { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 99px; border: 1px dashed var(--draw); color: var(--draw); }
+
+/* ---------- Timeline ---------- */
+.timeline { position: relative; display: grid; gap: 10px; padding-left: 4px; }
+.tl-row { display: grid; grid-template-columns: 52px 14px 1fr; gap: 10px; align-items: start; font-size: 0.93rem; }
+.tl-min { font-family: var(--display); font-weight: 600; text-align: right; color: var(--muted); }
+.tl-row.spurs .tl-min { color: var(--cyan); }
+.tl-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 5px; border: 2px solid var(--faint); }
+.tl-dot.goal { background: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow); }
+.tl-row.opp .tl-dot.goal { background: var(--loss); border-color: var(--loss); box-shadow: none; }
+.tl-dot.big-chance { border-color: var(--draw); }
+.tl-dot.woodwork { border-color: var(--muted); border-style: dashed; }

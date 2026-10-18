@@ -20,7 +20,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': types[path.extname(f)] || 'application/octet-stream' }); res.end(fs.readFileSync(f));
 }).listen(0);
 const base = `http://127.0.0.1:${server.address().port}/`;
-const routes = ['overview', 'fixtures', 'players', 'team', 'tactics', 'video', 'squad', 'table', 'match', 'sources'];
+const routes = ['overview', 'breakdown', 'fixtures', 'players', 'team', 'tactics', 'video', 'squad', 'table', 'match', 'sources'];
 const results = [];
 const browser = await chromium.launch();
 for (const [label, vp] of [['phone', { width: 390, height: 844, isMobile: true, hasTouch: true }], ['desktop', { width: 1366, height: 900 }]]) {

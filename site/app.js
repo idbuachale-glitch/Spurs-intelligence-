@@ -5,9 +5,9 @@ import { answer, renderAnswer, suggestions } from './analyst.js';
 const NAV = [
   ['overview', 'Overview', 'i-home'], ['fixtures', 'Fixtures & results', 'i-cal'], ['players', 'Player Lab', 'i-user'], ['team', 'Team statistics', 'i-chart'],
   ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['table', 'League table', 'i-table'],
-  ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
+  ['breakdown', 'Match breakdown', 'i-spark'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
 ];
-const BOTTOM = ['overview', 'fixtures', 'players', 'team'];
+const BOTTOM = ['overview', 'breakdown', 'players', 'fixtures'];
 const view = document.getElementById('view');
 const icon = (id) => `<svg aria-hidden="true"><use href="#${id}"/></svg>`;
 
@@ -35,7 +35,7 @@ async function boot() {
 
 function buildNav() {
   document.getElementById('nav').innerHTML = NAV.map(([k, l, i]) => `<a href="#/${k}" data-k="${k}">${icon(i)}${l}</a>`).join('');
-  document.getElementById('bottom-nav').innerHTML = BOTTOM.map((k) => { const n = NAV.find((x) => x[0] === k); return `<a href="#/${k}" data-k="${k}">${icon(n[2])}${n[1].split(' ')[0]}</a>`; }).join('') + `<button id="more-btn" aria-expanded="false">${icon('i-more')}More</button>`;
+  document.getElementById('bottom-nav').innerHTML = BOTTOM.map((k) => { const n = NAV.find((x) => x[0] === k); return `<a href="#/${k}" data-k="${k}">${icon(n[2])}${{ breakdown: 'Breakdown', players: 'Players' }[k] || n[1].split(' ')[0]}</a>`; }).join('') + `<button id="more-btn" aria-expanded="false">${icon('i-more')}More</button>`;
   const sheet = document.getElementById('more-sheet');
   sheet.innerHTML = NAV.filter(([k]) => !BOTTOM.includes(k)).map(([k, l, i]) => `<a href="#/${k}" data-k="${k}">${icon(i)}${l}</a>`).join('');
   const btn = document.getElementById('more-btn');
@@ -598,6 +598,62 @@ function postMatch(m) {
   if (best && best.xg + (best.xa || 0) > 0.2) out.push(`${best.name} was the main source of chance quality (${best.xg.toFixed(2)} xG, ${(best.xa || 0).toFixed(2)} xA).`);
   return out;
 }
+
+// ---------------- Match breakdown ----------------
+VIEWS.breakdown = async (id) => {
+  const fx = await loadSeason('fixtures.json');
+  const played = fx.fixtures.filter((f) => f.result).reverse();
+  if (!played.length) return '<h1>Match breakdown</h1><div class="empty">No matches played yet this season.</div>';
+  const competitive = played.filter((f) => !f.friendly);
+  const cur = played.find((f) => f.id === id) || competitive[0] || played[0];
+  const m = await loadSeason(`matches/${cur.id}.json`, state.season, { optional: true });
+  const b = m?.breakdown;
+  const idx = played.indexOf(cur);
+  const sel = `<div class="filters"><select class="ctl" id="bd-match" aria-label="Choose a match" style="flex:1 1 100%;min-width:0">${played.map((f) => `<option value="${esc(f.id)}" ${f.id === cur.id ? 'selected' : ''}>${esc(fmtDate(f.kickoff, { day: 'numeric', month: 'short' }))} · ${f.home ? 'v' : '@'} ${esc(f.opponent)} ${f.score.spurs}–${f.score.opp} (${esc(f.competition)})</option>`).join('')}</select>
+    <a class="btn ghost" style="flex:1;text-align:center" href="#/breakdown/${encodeURIComponent((played[idx + 1] || cur).id)}" aria-label="Previous match">‹ Older match</a><a class="btn ghost" style="flex:1;text-align:center" href="#/breakdown/${encodeURIComponent((played[idx - 1] || cur).id)}" aria-label="Next match">Newer match ›</a></div>`;
+  if (!m || !b) return `<h1>Match breakdown</h1>${sel}<div class="empty">No breakdown is available for this match yet.</div>`;
+  const f = m.fixture; const d = m.detail;
+  const L = f.home ? 'Spurs' : f.opponent; const R = f.home ? f.opponent : 'Spurs';
+  const sc = f.home ? `${f.score.spurs}–${f.score.opp}` : `${f.score.opp}–${f.score.spurs}`;
+  const dlt = (v, avg, lower) => { if (v === null || v === undefined || avg === null || avg === undefined) return ''; const up = v > avg * 1.1; const dn = v < avg * 0.9; if (!up && !dn) return '<span class="faint">≈</span>'; const good = lower ? dn : up; return `<span style="color:${good ? 'var(--win)' : 'var(--loss)'}">${up ? '▲' : '▼'}</span>`; };
+  return `<div class="section-head"><h1>Match breakdown</h1><span class="label-analysis">Automatic, after every match</span></div>${sel}
+  <section class="hero"><div class="kicker">${esc(f.competition)}${f.gameweek ? `, gameweek ${f.gameweek}` : ''} · ${esc(fmtDate(f.kickoff, { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
+    <div class="fixture-board"><div class="team">${esc(L)}</div><div class="mid"><div class="clock">${sc}</div><div class="vs">${{ W: 'Spurs win', D: 'Draw', L: 'Spurs defeat' }[f.result]}</div></div><div class="team right">${esc(R)}</div></div>
+    ${b.verdict ? `<div class="hero-meta"><span>xG <strong>${fmtPlain(b.verdict.xgFor, 2)}</strong> v <strong>${fmtPlain(b.verdict.xgAgainst, 2)}</strong></span>${b.momentumShare !== undefined && b.momentumShare !== null ? `<span>Spurs on top for <strong>${b.momentumShare}%</strong> of the match</span>` : ''}</div><p style="margin:10px 0 0;color:#dfe9ff">${esc(b.verdict.text)}</p>` : ''}
+    ${b.styleTags.length ? `<div class="chips" style="margin-top:12px">${b.styleTags.map((t) => `<span class="pill" style="color:#bff6ff;border-color:rgba(60,232,255,.4)">${esc(t)}</span>`).join('')}</div>` : ''}</section>
+
+  <div class="grid two section">
+    <div class="panel"><h2>Key moments</h2>${b.moments.length ? `<div class="timeline">${b.moments.map((x) => `<div class="tl-row ${x.side}"><span class="tl-min">${esc(x.label)}</span><span class="tl-dot ${x.kind}"></span><span>${esc(x.text)}<span class="faint small"> · ${x.side === 'spurs' ? 'Spurs' : esc(f.opponent)}</span></span></div>`).join('')}</div>` : '<p class="na">No goals or big chances recorded with minutes.</p>'}
+      ${b.spells.length ? `<h3 style="margin-top:16px">Spells on top</h3><div class="chips">${b.spells.map((x) => `<span class="pill" style="border-color:${x.side === 'spurs' ? 'var(--cyan)' : 'var(--loss)'}">${esc(x.text)}</span>`).join('')}</div>` : ''}
+      <p class="source">Minutes from shot data and FotMob's momentum index. Cards and substitutions have no times in the free data.</p></div>
+    <div class="panel"><h2>How Spurs played</h2>${b.howSpursPlayed.map((t) => `<p>${esc(t)}</p>`).join('')}<p class="tiny faint">${esc(b.label)}</p></div>
+  </div>
+
+  ${d && (d.xgRace?.length || d.momentum?.length) ? `<div class="grid two section"><div class="panel"><h2>xG race</h2>${xgRace(d.xgRace, { opp: f.opponent })}</div><div class="panel"><h2>Momentum</h2>${momentumChart(d.momentum, { opp: f.opponent })}</div></div>` : ''}
+
+  ${b.style.length ? `<div class="panel section"><h2>Style of play</h2><div class="table-wrap"><table><thead><tr><th>Measure</th><th class="r">This match</th><th class="r">Spurs season avg</th><th class="r">League avg</th></tr></thead><tbody>
+    ${b.style.map((r) => `<tr><td style="white-space:normal">${esc(r.label)}</td><td class="r"><strong>${r.value === null ? '<span class="na">—</span>' : `${r.value}${r.unit}`}</strong></td><td class="r">${r.seasonAvg === null ? '<span class="na">—</span>' : `${fmtPlain(r.seasonAvg, 1)}${r.unit}`}</td><td class="r">${r.leagueAvg === null ? '<span class="na">—</span>' : `${fmtPlain(r.leagueAvg, 1)}${r.unit}`}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+
+  ${b.comparison.length ? `<div class="grid two section"><div class="panel"><h2>Team stats</h2><div class="table-wrap"><table><thead><tr><th>Stat</th><th class="r">Spurs</th><th class="r">${esc(f.opponent)}</th><th class="r">Spurs usual</th><th></th></tr></thead><tbody>
+    ${b.comparison.map((r) => `<tr><td>${esc(r.label)}</td><td class="r"><strong>${fmt(r.spurs, r.dp)}</strong></td><td class="r">${fmt(r.opp, r.dp)}</td><td class="r faint">${r.seasonAvg === null ? '' : fmtPlain(r.seasonAvg, r.dp)}</td><td>${dlt(r.spurs, r.seasonAvg, r.lowerBetter)}</td></tr>`).join('')}</tbody></table></div><p class="source">▲▼ = at least 10% above or below Spurs' average this season (green is better).</p></div>
+    <div class="panel"><h2>By half</h2>${b.halves ? `<div class="table-wrap"><table><thead><tr><th></th><th class="r">Goals</th><th class="r">Shots</th><th class="r">xG</th></tr></thead><tbody>
+      <tr><td>1st half, Spurs</td><td class="r">${b.halves.first.gf}</td><td class="r">${b.halves.first.shotsF}</td><td class="r">${fmtPlain(b.halves.first.xgf, 2)}</td></tr><tr><td>1st half, ${esc(f.opponent)}</td><td class="r">${b.halves.first.ga}</td><td class="r">${b.halves.first.shotsA}</td><td class="r">${fmtPlain(b.halves.first.xga, 2)}</td></tr>
+      <tr><td>2nd half, Spurs</td><td class="r">${b.halves.second.gf}</td><td class="r">${b.halves.second.shotsF}</td><td class="r">${fmtPlain(b.halves.second.xgf, 2)}</td></tr><tr><td>2nd half, ${esc(f.opponent)}</td><td class="r">${b.halves.second.ga}</td><td class="r">${b.halves.second.shotsA}</td><td class="r">${fmtPlain(b.halves.second.xga, 2)}</td></tr></tbody></table></div>` : '<p class="na">No shot data.</p>'}
+      <h2 style="margin-top:18px">Standouts</h2>${b.standouts.map((x) => `<div class="statrow"><span>${esc(x.label)}</span><span><a href="#/player/${x.playerId}">${esc(x.name)}</a> <strong class="num">${esc(x.value)}</strong></span></div>`).join('') || '<p class="na">—</p>'}</div></div>` : ''}
+
+  ${d?.shots?.length ? `<div class="grid two section"><div class="panel"><h2>Spurs shots</h2>${shotMap(d.shots.filter((x) => x.team === 'spurs'))}</div><div class="panel"><h2>${esc(f.opponent)} shots</h2>${shotMap(d.shots.filter((x) => x.team === 'opp'))}</div></div>` : ''}
+
+  <section class="section"><div class="section-head"><h2>Every Spurs player</h2><span class="muted small">Starters first</span></div>
+    <div class="grid three">${b.players.map((p) => `<div class="panel"><div class="section-head" style="margin-bottom:6px"><a href="#/player/${p.playerId}"><strong>${esc(p.name)}</strong></a><span class="small muted">${esc(p.pos || '')} · ${p.role === 'starter' ? 'started' : p.role === 'sub' ? 'sub' : ''} · ${p.minutes}'</span></div>
+      <div class="chips" style="margin:6px 0">${p.key.map(([k, v]) => `<span class="pill"><span class="faint">${esc(k)}</span> <strong style="color:var(--text)">${esc(v)}</strong></span>`).join('')}</div>
+      ${p.notes.length ? `<p class="small" style="margin:6px 0 0;color:var(--cyan)">${esc(p.notes.join(', '))}</p>` : ''}</div>`).join('')}</div>
+    <p class="source">Compared with each player's own per-90 average this season. ${esc(b.sources.join('; '))}.</p></section>
+  <p class="small"><a href="#/match/${encodeURIComponent(f.id)}">Full Match Centre for this game</a>${d?.fotmobUrl ? ` · <a href="${esc(d.fotmobUrl)}" target="_blank" rel="noopener">Heat maps and positions on FotMob</a>` : ''}</p>`;
+};
+AFTER.breakdown = () => {
+  const s = document.getElementById('bd-match');
+  if (s) s.addEventListener('change', () => { location.hash = `#/breakdown/${encodeURIComponent(s.value)}`; });
+};
 
 // ---------------- Data sources & settings ----------------
 VIEWS.sources = async () => {
