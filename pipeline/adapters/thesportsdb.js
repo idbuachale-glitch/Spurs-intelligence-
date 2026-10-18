@@ -12,9 +12,14 @@ export const id = 'thesportsdb';
 export const label = 'TheSportsDB (free tier)';
 
 export async function resolveTeamId() {
-  const r = await get('searchteams.php?t=Tottenham');
-  const teams = (r && r.teams) || [];
-  const hit = teams.find((t) => t.strSport === 'Soccer' && /tottenham hotspur/i.test(t.strTeam) && !/women|u21|u18|ladies/i.test(t.strTeam));
+  let teams = [];
+  for (const q of ['Tottenham_Hotspur', 'Tottenham', 'Spurs']) {
+    const r = await get(`searchteams.php?t=${q}`).catch(() => null);
+    teams = (r && r.teams) || [];
+    if (teams.length) break;
+  }
+  const ok = (t) => (!t.strSport || t.strSport === 'Soccer') && /tottenham|spurs/i.test(`${t.strTeam} ${t.strTeamAlternate || ''}`) && !/women|u21|u23|u18|ladies|academy/i.test(t.strTeam);
+  const hit = teams.find((t) => ok(t) && /english premier league/i.test(`${t.strLeague} ${t.strLeague2 || ''}`)) || teams.find(ok);
   if (!hit) throw new Error('TheSportsDB: Tottenham Hotspur not found');
   return hit.idTeam;
 }

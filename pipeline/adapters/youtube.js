@@ -11,20 +11,29 @@ export const label = 'YouTube RSS — official Tottenham Hotspur & Premier Leagu
 export async function resolveChannelId(channel) {
   try {
     const { body } = await request(`${cfg.base}/${channel.handle}`, { as: 'text', retries: 1, headers: { 'Accept-Language': 'en' } });
-    const m = body.match(/"(?:channelId|externalId)":"(UC[\w-]{22})"/) || body.match(/channel\/(UC[\w-]{22})/);
+    // Use the page's own canonical channel link; a bare "channelId" can belong to a
+    // recommended channel elsewhere on the page.
+    const m = body.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/channel\/(UC[\w-]{22})"/) || body.match(/"externalId":"(UC[\w-]{22})"/);
     if (m) return m[1];
   } catch { /* fall back */ }
   return channel.fallbackId;
 }
 
 export async function fetchChannel(channel) {
-  const channelId = await resolveChannelId(channel);
-  const { body } = await request(`${cfg.base}/feeds/videos.xml?channel_id=${channelId}`, { as: 'text' });
-  const feed = parseFeed(body);
-  if (!feed.author.toLowerCase().includes(channel.expectName)) {
-    throw new Error(`YouTube: channel ${channelId} is "${feed.author}", expected "${channel.expectName}" — refusing unverified source`);
+  const resolved = await resolveChannelId(channel);
+  let lastErr = null;
+  for (const channelId of [...new Set([resolved, channel.fallbackId])]) {
+    try {
+      const { body } = await request(`${cfg.base}/feeds/videos.xml?channel_id=${channelId}`, { as: 'text' });
+      const feed = parseFeed(body);
+      if (!feed.author.toLowerCase().includes(channel.expectName)) {
+        lastErr = new Error(`YouTube: channel ${channelId} is "${feed.author}", expected "${channel.expectName}" — refusing unverified source`);
+        continue;
+      }
+      return { channelId, author: feed.author, videos: feed.entries.map((e) => ({ ...e, channel: channel.key, channelName: feed.author })) };
+    } catch (err) { lastErr = err; }
   }
-  return { channelId, author: feed.author, videos: feed.entries.map((e) => ({ ...e, channel: channel.key, channelName: feed.author })) };
+  throw lastErr;
 }
 
 const decode = (s) => String(s || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");

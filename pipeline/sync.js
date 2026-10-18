@@ -260,7 +260,7 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
   }
   const fplPos = boot.teams.find((t) => t.id === spursId);
   built.files['table.json'].verification = {
-    fplOfficialPosition: fplPos && fplPos.position ? { position: fplPos.position, agrees: fplPos.position === built.files['table.json'].spurs?.position } : null,
+    fplOfficialPosition: fplPos && fplPos.position && fplPos.played > 0 ? { position: fplPos.position, agrees: fplPos.position === built.files['table.json'].spurs?.position } : null,
     footballData: standingsCheck,
   };
 
