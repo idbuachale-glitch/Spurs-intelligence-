@@ -159,7 +159,7 @@ const statDefs = () => state.meta.statDefs;
 // Per-match descriptions for interactive charts (team match rows from team.json).
 // Opponent crest for chart badges (Premier League image server); cup opponents show initials.
 const badgeOf = (m) => {
-  const code = m.opponentTeamId ? state.meta.teamCodes?.[m.opponentTeamId] : null;
+  const tid = m.opponentTeamId || teamIdByName(m.opponent); const code = tid ? state.meta.teamCodes?.[tid] : null;
   const name = m.opponentShort || state.meta.teamShort?.[m.opponentTeamId] || (m.opponent || '').replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).map((w) => w[0]).join('');
   return { url: code ? `https://resources.premierleague.com/premierleague/badges/70/t${code}.png` : (state.meta.extraBadges?.[m.opponent] || null), short: name };
 };
@@ -495,7 +495,7 @@ VIEWS.team = async () => {
   const pm = (k) => adv?.perMatch[k];
   return `<h1>Team statistics</h1>
   ${team.leagueRanks && Object.keys(team.leagueRanks.metrics || {}).length ? `<section style="margin-bottom:22px"><div class="section-head"><h2>Where Spurs rank</h2><span class="muted small">Per-match averages, all 20 clubs</span></div>
-    ${rankTiles(team.leagueRanks, ['possession', 'fieldTilt', 'passPct', 'touchesOppBox', 'shots', 'sot', 'xg', 'bigChances', 'dribbles', 'xgSetPlay', 'xga', 'shotsAgainst'])}
+    ${rankTiles(team.leagueRanks, ['possession', 'fieldTilt', 'passPct', 'touchesOppBox', 'shots', 'sot', 'xg', 'bigChances', 'dribbles', 'xgSetPlay', 'xga', 'shotsAgainst', 'ppda', 'longBallPct'])}
     <p class="source">${esc(team.leagueRanks.source)}. Bar length = league position (longer is better). FotMob xG here; elsewhere the site uses FPL/Opta xG.</p></section>` : ''}
   <div class="panel"><h2>Premier League record by split</h2><div class="table-wrap"><table class="stack"><thead><tr><th class="sticky-col">Split</th><th class="r">P</th><th class="r">W-D-L</th><th class="r">Pts/game</th><th class="r">Goals</th><th class="r">xG/game</th><th class="r">xGA/game</th><th class="r">Clean sheets</th></tr></thead><tbody>
     ${blockRow('Season', o)}${blockRow('Home', team.home)}${blockRow('Away', team.away)}${blockRow('Last 5', team.last5)}${blockRow('Last 10', team.last10)}
@@ -517,7 +517,8 @@ VIEWS.team = async () => {
     <div class="panel"><h2>By half</h2>${adv.halves ? `<div class="table-wrap"><table><thead><tr><th></th><th class="r">Goals for</th><th class="r">Goals against</th><th class="r">xG for</th><th class="r">xG against</th></tr></thead><tbody>
       <tr><td>First half</td><td class="r">${adv.halves.first.gf}</td><td class="r">${adv.halves.first.ga}</td><td class="r">${fmtPlain(adv.halves.first.xgf, 2)}</td><td class="r">${fmtPlain(adv.halves.first.xga, 2)}</td></tr>
       <tr><td>Second half</td><td class="r">${adv.halves.second.gf}</td><td class="r">${adv.halves.second.ga}</td><td class="r">${fmtPlain(adv.halves.second.xgf, 2)}</td><td class="r">${fmtPlain(adv.halves.second.xga, 2)}</td></tr></tbody></table></div><p class="source">From shot-level data in ${adv.halves.n} matches; own goals are not shots and are excluded.</p>` : '<p class="na">No shot data yet.</p>'}
-    <h2 style="margin-top:18px">By situation</h2>${situationTable(adv.situations)}</div></div>` : '<div class="banner info section">Possession, shots and passing appear here once the supplementary match source has data for this season.</div>'}
+    <h2 style="margin-top:18px">By situation</h2>${situationTable(adv.situations)}</div></div>
+  ${pressTransitionsHtml(team, adv)}` : '<div class="banner info section">Possession, shots and passing appear here once the supplementary match source has data for this season.</div>'}
   ${spTakers ? `<div class="panel section"><h2>Set-piece takers</h2><div class="statlist">${spTakers}</div><p class="source">Fantasy Premier League's published set-piece order for current players (1st = first choice). Retrieved ${esc(fmtDateTime(team.generatedAt))}.</p></div>` : ''}
   <div class="panel section"><h2>Defensive actions per match (FPL)</h2><div class="statlist">${['tackles', 'cbi', 'recoveries', 'defcon', 'saves', 'yc'].map((k) => { const r = team.fplRanks?.metrics?.[k]; return `<div class="statrow"><span>${esc({ tackles: 'Tackles', cbi: 'Clearances, blocks & interceptions', recoveries: 'Recoveries', defcon: 'Defensive contribution', saves: 'Saves', yc: 'Yellow cards' }[k])}${r ? `<span class="lrank">League avg ${fmt(r.leagueAvg, 1)} · most: ${crestOf(r.leader.team)}${esc(r.leader.team)} ${fmt(r.leader.value, 1)}</span>` : ''}</span><span class="v">${fmt(o.perMatch[k].value, 1)}${r ? `<span class="rk-chip">${ordinal(r.rank)} of ${r.of}</span>` : ''}</span></div>`; }).join('')}</div>${team.fplRanks?.metrics && Object.keys(team.fplRanks.metrics).length ? `<p class="tiny faint">${esc(team.fplRanks.basis)} A high rank is not always good: more saves or clearances can mean more pressure faced, and more yellow cards is worse.</p>` : ''}
     <p class="source">Not available free: ${esc(state.meta.unavailable.team.join(', '))}.</p></div>`;
@@ -852,6 +853,31 @@ function livePanel(m) {
     <p class="source">${st ? `Team stats: ${esc(lv.source.stats)}` : ''}${st && pl.length ? '; ' : ''}${pl.length ? `players: ${esc(lv.source.players)}` : ''}. Last update ${esc(fmtTime(lv.retrievedAt || lv.playersAt))} Bahrain${lv.isLive ? ' · the site updates about every 5 minutes during the match and this page reloads itself every minute' : ''}.</p></section>`;
 }
 
+// Pressing (PPDA estimate), territory and counter-attacks, season and match by match.
+function pressTransitionsHtml(team, adv) {
+  const ms = (team.matches || []).filter((m) => m.adv);
+  const r = team.leagueRanks?.metrics || {};
+  const c = adv.counters;
+  const per = (x) => (c && c.n ? fmtPlain(x / c.n, 2) : '—');
+  const rk = (k) => (r[k] ? `<span class="rk-chip">${ordinal(r[k].rank)} of ${r[k].of}</span>` : '');
+  const tiles = `<div class="grid three" style="margin-bottom:12px">
+    <div class="panel stat-tile"><span class="lbl">PPDA (est.)</span><span class="big">${fmt(adv.perMatch.ppda?.value, 1)}</span><span class="small muted">${rk('ppda')} League avg ${fmtPlain(r.ppda?.leagueAvg, 1)}. Lower = Spurs press harder.</span></div>
+    <div class="panel stat-tile"><span class="lbl">Opponents' PPDA v Spurs</span><span class="big">${fmt(adv.perMatch.oppPpda?.value, 1)}</span><span class="small muted">Lower = opponents press Spurs harder.</span></div>
+    <div class="panel stat-tile"><span class="lbl">Field tilt</span><span class="big">${fmt(adv.perMatch.fieldTilt?.value, 1, { unit: '%' })}</span><span class="small muted">${rk('fieldTilt')} Share of passing in the opposition half.</span></div>
+  </div>`;
+  const counters = c ? `<div class="panel"><h3 style="margin-top:0">Counter-attacks (fast breaks)</h3><div class="statlist">
+    <div class="statrow"><span>Shots conceded on the break</span><span class="v">${c.against.shots}<small>${per(c.against.shots)}/match</small></span></div>
+    <div class="statrow"><span>xG conceded on the break</span><span class="v">${fmtPlain(c.against.xg, 2)}<small>${per(c.against.xg)}/match</small></span></div>
+    <div class="statrow"><span>Goals conceded on the break</span><span class="v">${c.against.goals}</span></div>
+    <div class="statrow"><span>Spurs shots on the break</span><span class="v">${c.for.shots}<small>${per(c.for.shots)}/match</small></span></div>
+    <div class="statrow"><span>Spurs xG on the break</span><span class="v">${fmtPlain(c.for.xg, 2)}</span></div>
+    <div class="statrow"><span>Spurs goals on the break</span><span class="v">${c.for.goals}</span></div></div>
+    <p class="source">Shots the source tags as fast breaks, over ${c.n} PL matches. A counter that ends without a shot is not counted.</p></div>` : '';
+  const chart = ms.length > 1 ? `<div class="panel"><h3 style="margin-top:0">Match by match</h3>${lineChart({ labels: ms.map((m) => m.opponentShort || m.opponent.slice(0, 3)), series: [{ name: 'PPDA (est.)', color: 'var(--cyan)', values: ms.map((m) => m.adv.ppda ?? null) }, { name: 'Shots conceded on the break', color: 'var(--loss)', values: ms.map((m) => m.adv.counters?.against.shots ?? null) }], height: 200, format: (v) => v.toFixed(1), points: matchPoints(ms), title: 'Pressing and counters conceded', badges: ms.map(badgeOf) })}</div>` : '';
+  return `<section class="section"><div class="section-head"><h2>Pressing &amp; transitions</h2><span class="label-analysis">Estimates</span></div>${tiles}<div class="grid two">${counters}${chart}</div>
+    <p class="source">PPDA (passes per defensive action) estimate = opponent passes in their own half ÷ Spurs tackles won, interceptions and fouls, across the whole pitch (the standard version counts only actions in the opponent's 60% of the pitch, which needs paid location data). FotMob match data via FPL Core Insights.</p></section>`;
+}
+
 function forecastHtml(fc) {
   const bar = `<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin:10px 0 6px"><div style="width:${fc.win}%;background:var(--win)"></div><div style="width:${fc.draw}%;background:var(--draw)"></div><div style="width:${fc.loss}%;background:var(--loss)"></div></div>`;
   return `<div class="panel section"><div class="section-head"><h3>Match forecast</h3><span class="label-analysis">Model probability</span></div>
@@ -1005,6 +1031,8 @@ VIEWS.style = async () => {
     { key: 'passPct', label: 'Pass accuracy', unit: '%', get: (m) => m.adv.spurs.passPct, league: ranks.passPct?.leagueAvg, why: 'Building through pressure needs secure, short passing.' },
     { key: 'xgShot', label: 'Chance quality (xG per shot)', unit: '', dp: 3, get: (m) => (m.adv.spurs.xg !== null && m.adv.spurs.shots ? m.adv.spurs.xg / m.adv.spurs.shots : null), league: null, why: 'Patient build-up should create better chances, not just more shots.' },
     { key: 'touchesOppBox', label: 'Touches in the opposition box', unit: '', get: (m) => m.adv.spurs.touchesOppBox, league: ranks.touchesOppBox?.leagueAvg, why: 'Possession should turn into presence in the box.' },
+    { key: 'ppda', label: 'Pressing intensity (PPDA, est.)', unit: '', dp: 1, lower: true, get: (m) => m.adv.ppda ?? null, league: ranks.ppda?.leagueAvg, why: 'De Zerbi teams press to win the ball back high; lower = fewer passes allowed per defensive action.' },
+    { key: 'counters', label: 'Shots conceded on the break', unit: '', dp: 0, lower: true, get: (m) => m.adv.counters?.against.shots ?? null, league: null, why: 'Committing players forward leaves space behind; this tracks how often it is punished.' },
     { key: 'xgaAgainst', label: 'xG conceded', unit: '', dp: 2, lower: true, get: (m) => m.adv.opp.xg, league: ranks.xga?.leagueAvg, why: 'Control of the ball should limit what opponents create.' },
   ];
   const labels = ms.map((m) => m.opponentShort || m.opponent.slice(0, 3));

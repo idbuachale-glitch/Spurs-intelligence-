@@ -81,6 +81,7 @@ export function matchBreakdown({ match, teamSummary, seasonPlayers }) {
       row('Possession', S.possession, '%', season?.possession?.spurs?.value, league.possession?.leagueAvg),
       row('Field tilt (share of passes in opposition half)', tilt, '%', season?.fieldTilt?.value ?? null, league.fieldTilt?.leagueAvg),
       row('Pass accuracy', S.passPct, '%', season?.passPct?.spurs?.value, league.passPct?.leagueAvg),
+      row('PPDA, estimated (opponent passes per Spurs defensive action; lower = harder press)', (() => { const a = [S.tacklesWon, S.interceptions, S.fouls]; return O.ownHalf !== null && a.every((x) => x !== null) && a.reduce((x, y) => x + y, 0) > 0 ? O.ownHalf / a.reduce((x, y) => x + y, 0) : null; })(), '', season?.ppda?.value ?? null, league.ppda?.leagueAvg),
       row('Long balls as share of accurate passes', longShare, '%', null, null),
       row('Shots', S.shots, '', season?.shots?.spurs?.value, league.shots?.leagueAvg, 0),
       row('xG per shot (chance quality)', xgPerShot, '', null, null, 3),

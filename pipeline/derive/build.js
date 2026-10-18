@@ -428,7 +428,13 @@ export function advancedTeam(d) {
   for (const v of Object.values(situations)) for (const k of ['for', 'against']) v[k].xg = round(v[k].xg, 2);
   const tilt = d.spurs.oppHalf !== null && d.opp.oppHalf !== null && d.spurs.oppHalf + d.opp.oppHalf > 0
     ? round((d.spurs.oppHalf / (d.spurs.oppHalf + d.opp.oppHalf)) * 100, 1) : null;
-  return { spurs: d.spurs, opp: d.opp, fieldTilt: tilt, halves: d.shots.length ? halves : null, situations: d.shots.length ? situations : null, shotsRecorded: d.shots.length };
+  // PPDA (estimate): opponent passes in their own half per Spurs defensive action
+  // (tackles won + interceptions + fouls), whole pitch. Lower = more aggressive pressing.
+  const ppda = (pas, o) => { const acts = [o.tacklesWon, o.interceptions, o.fouls]; return pas !== null && acts.every((x) => x !== null) && acts.reduce((a, b) => a + b, 0) > 0 ? round(pas / acts.reduce((a, b) => a + b, 0), 1) : null; };
+  const fb = situations['fast-break'] || { for: { shots: 0, goals: 0, xg: 0 }, against: { shots: 0, goals: 0, xg: 0 } };
+  return { spurs: d.spurs, opp: d.opp, fieldTilt: tilt, ppda: ppda(d.opp.ownHalf, d.spurs), oppPpda: ppda(d.spurs.ownHalf, d.opp),
+    counters: d.shots.length ? { for: fb.for, against: fb.against } : null,
+    halves: d.shots.length ? halves : null, situations: d.shots.length ? situations : null, shotsRecorded: d.shots.length };
 }
 
 function avg(rows, k) {
@@ -485,12 +491,16 @@ export function leagueAdvancedRanks(rows, teams, clubCode) {
       const a = num(m[`${side}_opposition_half`]); const b = num(m[`${other}_opposition_half`]);
       add('fieldTilt', a !== null && b !== null && a + b > 0 ? (a / (a + b)) * 100 : null);
       add('dribbles', num(m[`${side}_successful_dribbles`])); add('xgSetPlay', num(m[`${side}_xg_set_play`]));
+      { const pas = num(m[`${other}_own_half`]); const acts = [num(m[`${side}_tackles_won`]), num(m[`${side}_interceptions`]), num(m[`${side}_fouls_committed`])];
+        add('ppda', pas !== null && acts.every((x) => x !== null) && acts.reduce((a, b) => a + b, 0) > 0 ? pas / acts.reduce((a, b) => a + b, 0) : null); }
+      add('longBallPct', num(m[`${side}_accurate_long_balls_pct`]));
       by.set(code, t);
     }
   }
   const defs = { possession: ['Possession', '%', false], fieldTilt: ['Field tilt', '%', false], shots: ['Shots per match', '', false], sot: ['Shots on target per match', '', false],
     xg: ['xG per match', '', false], bigChances: ['Big chances per match', '', false], touchesOppBox: ['Touches in opposition box', '', false], passPct: ['Pass accuracy', '%', false],
-    dribbles: ['Successful take-ons per match', '', false], xgSetPlay: ['Set-piece xG per match', '', false], xga: ['xG conceded per match', '', true], shotsAgainst: ['Shots conceded per match', '', true] };
+    dribbles: ['Successful take-ons per match', '', false], xgSetPlay: ['Set-piece xG per match', '', false], xga: ['xG conceded per match', '', true], shotsAgainst: ['Shots conceded per match', '', true],
+    ppda: ['PPDA (est.): opponent passes per defensive action', '', true], longBallPct: ['Long-ball accuracy', '%', false] };
   const teamByCode = new Map(teams.map((t) => [Number(t.code), t]));
   const out = {};
   for (const [k, [label, unit, lowerBetter]] of Object.entries(defs)) {
@@ -552,6 +562,11 @@ function advancedBlock(rows) {
   const perMatch = {};
   for (const k of keys) perMatch[k] = { spurs: av((r) => r.adv.spurs[k]), opp: av((r) => r.adv.opp[k]) };
   perMatch.fieldTilt = av((r) => r.adv.fieldTilt);
+  perMatch.ppda = av((r) => r.adv.ppda);
+  perMatch.oppPpda = av((r) => r.adv.oppPpda);
+  const cm = rows.filter((r) => r.adv.counters);
+  const csum = (side, k) => round(cm.reduce((a, r) => a + r.adv.counters[side][k], 0), 2);
+  const counters = cm.length ? { n: cm.length, for: { shots: csum('for', 'shots'), goals: csum('for', 'goals'), xg: csum('for', 'xg') }, against: { shots: csum('against', 'shots'), goals: csum('against', 'goals'), xg: csum('against', 'xg') } } : null;
   const halves = { first: { gf: 0, ga: 0, xgf: 0, xga: 0 }, second: { gf: 0, ga: 0, xgf: 0, xga: 0 } };
   const situations = {};
   let halfN = 0;
@@ -562,6 +577,6 @@ function advancedBlock(rows) {
       for (const side of ['for', 'against']) { t[side].shots += v[side].shots; t[side].goals += v[side].goals; t[side].xg = round(t[side].xg + v[side].xg, 2); }
     }
   }
-  return { n: rows.length, perMatch, halves: halfN ? { ...halves, n: halfN } : null, situations, source: 'FPL Core Insights (FotMob match data)' };
+  return { n: rows.length, perMatch, counters, halves: halfN ? { ...halves, n: halfN } : null, situations, source: 'FPL Core Insights (FotMob match data)' };
 }
 
