@@ -233,7 +233,7 @@ const LAB_GROUPS = {
   Attacking: [['goals', 'Goals', 0], ['assists', 'Assists', 0], ['xg', 'xG', 2], ['xa', 'xA', 2], ['shots', 'Shots', 0], ['chancesCreated', 'Chances', 0]],
   Dribbling: [['dribbles', 'Take-ons won', 0], ['takeOnPct', 'Take-on %', 1, 'rate'], ['touchesBox', 'Box touches', 0], ['wasFouled', 'Fouled', 0], ['dispossessed', 'Dispossessed', 0], ['dribbledPast', 'Dribbled past', 0]],
   Passing: [['passesAcc', 'Acc. passes', 0], ['passPct', 'Pass %', 1, 'rate'], ['finalThirdPasses', 'Final third', 0], ['crossesAcc', 'Crosses', 0], ['longBallsAcc', 'Long balls', 0], ['touches', 'Touches', 0]],
-  Defending: [['tacklesWon', 'Tackles', 0], ['defcon', 'DefCon', 0], ['foulsCommitted', 'Fouls', 0], ['interceptions', 'Int.', 0], ['recoveries', 'Recov.', 0], ['cbi', 'CBI', 0], ['duelsWon', 'Duels', 0]],
+  Defending: [['tacklesWon', 'Tackles', 0], ['defcon', 'DefCon /game', 1, 'perGame'], ['foulsCommitted', 'Fouls', 0], ['interceptions', 'Int.', 0], ['recoveries', 'Recov.', 0], ['cbi', 'CBI', 0], ['duelsWon', 'Duels', 0]],
   Fouls: [['foulsCommitted', 'Fouls', 0], ['wasFouled', 'Fouled', 0], ['yc', 'Yellow', 0], ['rc', 'Red', 0], ['offsides', 'Offsides', 0]],
   Goalkeeping: [['saves', 'Saves', 0], ['cs', 'Clean sheets', 0], ['gc', 'Conceded', 0], ['xgotFaced', 'xGOT faced', 2], ['goalsPrevented', 'Goals prev.', 2], ['gkPassesAcc', 'Acc. passes', 0]],
 };
@@ -258,21 +258,22 @@ AFTER.players = async () => {
     const pos = document.getElementById('f-pos').value; const comp = document.getElementById('f-comp').value; const mode = document.getElementById('f-mode').value; const who = document.getElementById('f-who').value;
     const gkOnly = group === 'Goalkeeping';
     const rows = ps.players.filter((p) => (!pos || p.pos === pos) && (gkOnly ? p.pos === 'GK' : (pos === 'GK' || p.pos !== 'GK' || group === 'Passing')) && (who === 'all' ? (p[comp]?.apps || 0) > 0 || p.current || p.membership === 'loan' : p.current));
-    const val = (p, [k, , , kind]) => { const st = p[comp]; return !st ? null : kind === 'rate' ? st.rates?.[k]?.value ?? null : st.totals?.[k] ?? null; };
+    const val = (p, [k, , , kind]) => { const st = p[comp]; return !st ? null : kind === 'rate' ? st.rates?.[k]?.value ?? null : kind === 'perGame' ? (st.totals?.[k] ?? null) !== null && st.apps ? st.totals[k] / st.apps : null : st.totals?.[k] ?? null; };
     // A column nobody has a value for was not recorded by the source; hide it and say so.
     const cols = LAB_GROUPS[group].filter((c) => rows.some((p) => val(p, c) !== null));
     const hidden = LAB_GROUPS[group].filter((c) => !cols.includes(c)).map(([, l]) => l);
     const cell = (p, [k, , dp, kind]) => {
       const s = p[comp];
       if (!s) return '<td class="r" data-v=""><span class="na">—</span></td>';
-      const per = mode === 'per90' && s.per90 && s.per90[k] !== undefined;
-      const v = kind === 'rate' ? s.rates?.[k]?.value ?? null : per ? s.per90[k] : s.totals?.[k];
+      const per = kind !== 'perGame' && mode === 'per90' && s.per90 && s.per90[k] !== undefined;
+      const v = kind === 'rate' || kind === 'perGame' ? val(p, [k, , , kind]) : per ? s.per90[k] : s.totals?.[k];
       return `<td class="r" data-v="${v ?? ''}">${kind === 'rate' && v !== null ? `${fmt(v, 0)}%` : fmt(v, per ? 2 : dp)}</td>`;
     };
     const minCol = (p) => p[comp]?.totals.minutes ?? 0;
     document.getElementById('lab-table').innerHTML = `<table data-sortable class="lab"><thead><tr><th class="sortable sticky-col">Player</th>${cols.map(([, l]) => `<th class="sortable r">${l}</th>`).join('')}</tr></thead>
       <tbody>${rows.map((p) => `<tr class="clickable" data-href="#/player/${p.id}"><td class="sticky-col" data-v="${esc(p.web)}"><a href="#/player/${p.id}">${esc(p.web)}</a><span class="sub">${p.pos} · ${p[comp]?.apps ?? 0} apps · ${minCol(p)}′${p.current ? '' : ` · ${esc(p.membershipLabel || 'former')}`}${p.status && p.status !== 'a' ? `<span class="st" style="color:var(--warn)">${esc(p.statusLabel)}</span>` : ''}</span></td>${cols.map((c) => cell(p, c)).join('')}</tr>`).join('')}</tbody></table>
       ${rows.length ? '' : '<div class="empty">No players match these filters.</div>'}
+      ${group === 'Defending' && rows.length ? '<p class="source" style="padding:0 8px">DefCon /game = FPL defensive contribution per appearance (clearances, blocks, interceptions and tackles, plus recoveries for midfielders and forwards). Fouls = fouls committed. Int. = interceptions. CBI = clearances, blocks and interceptions combined (FPL). Duels = duels won.</p>' : ''}
       ${hidden.length && rows.length ? `<p class="source" style="padding:0 8px">Not shown: ${esc(hidden.join(', '))}. The free source does not record ${hidden.length > 1 ? 'these' : 'this'} for individual players in this selection${group === 'Dribbling' ? ' (Spurs\' team take-on totals are on Team statistics)' : ''}; the column appears automatically once data exists.</p>` : ''}`;
     const t = document.querySelector('#lab-table table');
     sortableTable(t);
