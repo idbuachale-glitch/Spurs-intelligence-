@@ -258,8 +258,14 @@ select.ctl, input.ctl { background: var(--panel); border: 1px solid var(--line);
   .grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-/* Tablets in portrait and phones: bottom bar instead of the sidebar, full-width content. */
-@media (max-width: 1100px) {
+/* Tablets and narrow laptops keep the left sidebar (slimmer) with single-column panels so tables fit. */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .shell { grid-template-columns: 200px 1fr; }
+  .grid.two { grid-template-columns: 1fr; }
+  .content { padding: 20px 18px 40px; }
+  th, td { padding-left: 5px; padding-right: 5px; }
+}
+@media (max-width: 760px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .topbar { padding: 10px 16px; flex-wrap: wrap; }
@@ -279,9 +285,6 @@ select.ctl, input.ctl { background: var(--panel); border: 1px solid var(--line);
   .more-sheet a[aria-current='page'] { color: var(--cyan); border-color: var(--cyan); }
   .more-sheet svg { width: 20px; height: 20px; flex: none; color: var(--cyan); }
   .more-backdrop.open { display: block; position: fixed; inset: 0; z-index: 35; background: rgba(2, 6, 18, .55); }
-  .content { padding: 22px 22px 100px; }
-}
-@media (max-width: 760px) {
   .search { order: 3; max-width: none; flex-basis: 100%; }
   .content { padding: 18px 16px 100px; }
   .grid.two, .grid.three { grid-template-columns: 1fr; }
@@ -291,7 +294,9 @@ select.ctl, input.ctl { background: var(--panel); border: 1px solid var(--line);
   .area-row { grid-template-columns: 1fr auto; }
   .area-row > :last-child { grid-column: 1 / -1; }
   .pbar { grid-template-columns: 1fr 1.3fr 38px; }
-  /* Wide tables become stacked cards on phones */
+}
+/* Wide tables become stacked cards on phones and narrow tablets */
+@media (max-width: 860px) {
   table.stack thead { display: none; }
   table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
   table.stack tr { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-bottom: 10px; padding: 6px 10px; }
