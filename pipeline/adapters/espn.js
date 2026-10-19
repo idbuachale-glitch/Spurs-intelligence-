@@ -45,3 +45,32 @@ export async function lineups(league, eventId) {
   out.state = b?.header?.competitions?.[0]?.status?.type?.state || null;
   return out;
 }
+
+// Live state of one match: score, clock, key events, team stats and per-player stats,
+// using only the fields the feed actually carries. Also lists which stat names were
+// present, so the site can show exactly what is (and isn't) supplied.
+export async function liveMatch(league, eventId) {
+  const b = await get(`/${league}/summary?event=${eventId}`);
+  const comp = b?.header?.competitions?.[0] || {};
+  const st = comp.status || {};
+  const sides = {};
+  for (const c of comp.competitors || []) sides[c.homeAway] = { team: c.team?.displayName || c.team?.name || null, score: c.score !== undefined && c.score !== '' ? Number(c.score) : null };
+  const teamStats = {};
+  for (const t of b?.boxscore?.teams || []) {
+    const ha = t.homeAway || (t.team?.displayName === sides.home?.team ? 'home' : 'away');
+    teamStats[ha] = Object.fromEntries((t.statistics || []).map((s) => [s.name, s.displayValue ?? s.value ?? null]));
+  }
+  const players = {};
+  for (const r of b?.rosters || []) {
+    players[r.homeAway] = (r.roster || []).map((p) => ({
+      name: p.athlete?.displayName || '', short: p.athlete?.shortName || '', pos: p.position?.abbreviation || null, starter: Boolean(p.starter), subbedIn: Boolean(p.subbedIn), subbedOut: Boolean(p.subbedOut),
+      stats: Object.fromEntries((p.stats || []).map((s) => [s.name || s.abbreviation, s.value ?? s.displayValue ?? null])),
+    }));
+  }
+  const keyEvents = (Array.isArray(b?.keyEvents) ? b.keyEvents : []).map((e) => ({
+    type: e.type?.text || null, clock: e.clock?.displayValue || null, team: e.team?.displayName || null, text: e.text || e.shortText || null,
+    players: (e.participants || []).map((x) => x.athlete?.displayName).filter(Boolean),
+  })).filter((e) => e.type);
+  const statNames = { team: [...new Set(Object.values(teamStats).flatMap((o) => Object.keys(o)))], player: [...new Set(Object.values(players).flat().flatMap((p) => Object.keys(p.stats)))] };
+  return { state: st.type?.state || null, detail: st.type?.shortDetail || st.type?.detail || null, clock: st.displayClock || null, period: st.period ?? null, sides, teamStats, players, keyEvents, statNames };
+}

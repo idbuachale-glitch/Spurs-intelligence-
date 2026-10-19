@@ -493,7 +493,7 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
   if (af.enabled()) health('api-football', af.label).optional = true; else status.sources['api-football'] = { label: af.label, disabled: true, note: 'Optional. Add a free API_FOOTBALL_KEY secret for live shots, fouls, cards and corners during Spurs matches.' };
   try {
     const liveRes = await runLive({ built, stateDir, now, spursElementIds: seen, elementsById,
-      health: { ok: (d) => ok('api-football', af.label, d), fail: (e) => fail('api-football', af.label, e) } });
+      health: { ok: (d) => ok('api-football', af.label, d), fail: (e) => fail('api-football', af.label, e), espnOk: (d) => ok('espn', espn.label, d), espnFail: (e) => fail('espn', espn.label, e) } });
     if (liveRes.match) log.info('live window', { match: liveRes.match, notes: liveRes.notes });
   } catch (err) { log.error('live feed failed', { error: String(err.message || err) }); }
 
