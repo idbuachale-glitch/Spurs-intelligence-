@@ -262,8 +262,7 @@ VIEWS.overview = async () => {
       ${src(players.source, players.generatedAt)}
     </div>
   </div>
-  ${analysis && analysis.insights.length ? `<section class="section panel"><div class="section-head"><h2>What the numbers say</h2><span class="label-analysis">Calculated analysis</span></div>
-    ${analysis.insights.slice(0, 3).map(insightHtml).join('')}<a href="#/tactics">All findings and the De Zerbi analysis</a></section>` : ''}`;
+  ${analysis && analysis.insights.length ? `<p class="section small"><a href="#/tactics">What the numbers say: ${analysis.insights.length} findings in Tactical analysis →</a></p>` : ''}`;
 };
 AFTER.overview = () => {
   const el = document.getElementById('countdown');
@@ -667,7 +666,7 @@ VIEWS.tactics = async () => {
   </div>
   <div class="panel section"><h2>Under De Zerbi: rolling five-match xG</h2>${lineChart({ labels: dz.rolling.map((r) => r.opponent), series: [{ name: 'xG for (5-match avg)', color: 'var(--cyan)', values: dz.rolling.map((r) => r.xg5) }, { name: 'xG against (5-match avg)', color: 'var(--loss)', values: dz.rolling.map((r) => r.xga5) }], format: (v) => v.toFixed(2) })}<p class="source">${dz.matches} PL matches since April 2026.</p></div>
   <section class="section panel"><h2>Findings</h2>${a.insights.map(insightHtml).join('') || '<p class="na">Not enough matches yet.</p>'}</section>
-  ${team.overall.adv ? `<div class="grid two section"><div class="panel"><h2>Where the shots come from</h2>${situationTable(team.overall.adv.situations)}<p class="source">Set-piece and open-play outcomes from shot-level data (FPL Core Insights / FotMob).</p></div><div class="panel"><h2>Season shot map</h2><p class="small muted">Spurs shots, PL. Hover a circle for details.</p><div id="season-shots"><div class="skeleton" style="height:240px"></div></div></div></div>` : ''}
+  ${team.overall.adv ? `<div class="section"><div class="panel"><h2>Season shot map</h2><p class="small muted">Spurs shots, PL. Hover a circle for details.</p><div id="season-shots"><div class="skeleton" style="height:240px"></div></div><p class="small muted" style="margin-top:8px">Shots by situation (open play, set pieces, fast breaks): <a href="#/team">Team statistics →</a></p></div></div>` : ''}
   <div class="grid two section">
     <div class="panel"><h2>Who supplies the chance quality</h2>${barList(t.positionShare.filter((x) => x.xgiShare !== null).map((x) => ({ label: state.meta.posLabels[x.pos] + 's', value: x.xgiShare })), { max: 100, format: (v) => `${fmtPlain(v, 0)}%` })}<p class="source">Share of the squad's xG + xA by position group.</p></div>
     <div class="panel"><h2>Player roles from the numbers</h2>${t.roles.filter((r) => r.tags.length).map((r) => `<div class="statrow"><a href="#/player/${r.playerId}">${esc(r.name)}</a><span class="small muted" style="text-align:right">${r.tags.map(esc).join(', ')}</span></div>`).join('') || '<p class="na">No player meets the role thresholds yet.</p>'}<p class="source">Tags from per-90 thresholds (270+ minutes), e.g. primary creator = 0.20+ xA per 90.</p></div>
@@ -1261,7 +1260,7 @@ VIEWS.briefing = async () => {
         ${r.checks.map((c) => { const v = V[c.verdict] || V.neutral; return `<div class="rv-row"><span class="rv-mark ${v[1]}">${v[0]}</span><div><strong>${esc(c.title)}</strong>${v[2] ? ` <span class="rv-tag ${v[1]}">${v[2]}</span>` : ''}<p class="small muted">${esc(c.text)}</p><p class="small">${esc(c.actual)}</p></div></div>`; }).join('')}
         ${r.briefSaved ? '' : '<p class="tiny faint">This match was played before the briefing page existed, so only the saved pre-match forecast can be checked.</p>'}
         <div class="ic-links"><a href="#/style/${encodeURIComponent(r.matchId)}">How Spurs played →</a><a href="#/breakdown/${encodeURIComponent(r.matchId)}">Match breakdown →</a></div></details>`).join('')}</section>` : '';
-  return `${hero}${bullets}${lineups}${forecast}${watch}${stakes}${scout}${reviews}<p class="source">${esc(br?.label || '')}</p>`;
+  return `${hero}${bullets}${lineups}${forecast}${watch}${stakes ? '<p class="small"><a href="#/table">Other results that matter to Spurs this gameweek: League table →</a></p>' : ''}${scout}${reviews}<p class="source">${esc(br?.label || '')}</p>`;
 };
 AFTER.briefing = () => {
   const bl = document.querySelector('.brief-live[data-mid]');
