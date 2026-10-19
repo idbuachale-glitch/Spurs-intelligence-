@@ -112,6 +112,7 @@ export function buildSeason(input) {
     const oppTeam = teamByCode.get(home ? ac : hc);
     const processed = m.player_stats_processed === 'True';
     const shots = (fcShotsByMatch.get(m.match_id) || []).map((x) => { const sh = shotRow(x); return { ...sh, player: sh.player || (sh.elementId !== null && elements.has(sh.elementId) ? nameOf(sh.elementId) : null), team: (x.is_home === 'True') === home ? 'spurs' : 'opp' }; });
+    fillShooters(shots, fcPlayersByMatch.get(m.match_id) || [], elements, spursId, nameOf);
     // Momentum: the source's per-minute attacking-momentum value is positive for the
     // home side; it is flipped so positive always means Spurs.
     const momentum = (fcMomentumByMatch.get(m.match_id) || []).map((x) => ({ minute: num(x.minute), value: num(x.value) === null ? null : (home ? 1 : -1) * num(x.value) }))
@@ -580,3 +581,33 @@ function advancedBlock(rows) {
   return { n: rows.length, perMatch, counters, halves: halfN ? { ...halves, n: halfN } : null, situations, source: 'FPL Core Insights (FotMob match data)' };
 }
 
+
+// About one shot in five arrives without a player ID. Each player's match row still records
+// how many shots, shots on target and goals he had, so a missing shooter can be worked out
+// when exactly one player on that side has a shot (or goal) not yet accounted for.
+export function fillShooters(shots, rows, elements, spursId, nameOf) {
+  const side = (id) => { const e = elements.get(id); return e ? (num(e.team) === spursId ? 'spurs' : 'opp') : null; };
+  const left = new Map();
+  for (const r of rows) {
+    const id = num(r.player_id); if (id === null) continue;
+    left.set(id, { side: side(id), shots: num(r.total_shots) || 0, sot: num(r.shots_on_target) || 0, goals: num(r.goals) || 0 });
+  }
+  const onT = (s) => s.outcome === 'goal' || s.outcome === 'save';
+  for (const s of shots) { const l = left.get(s.elementId); if (!l) continue; l.shots--; if (onT(s)) l.sot--; if (s.outcome === 'goal') l.goals--; }
+  // Goals first (most certain), then shots on target, then the rest; repeat while progress is made.
+  for (let pass = 0; pass < 3; pass++) {
+    let progress = false;
+    for (const s of shots.filter((x) => x.elementId === null).sort((a, b) => (b.outcome === 'goal') - (a.outcome === 'goal') || onT(b) - onT(a))) {
+      const cands = [...left.entries()].filter(([, l]) => l.side === s.team && l.shots > 0 && (s.outcome === 'goal' ? l.goals > 0 : true) && (onT(s) ? l.sot > 0 : true));
+      if (cands.length !== 1) continue;
+      const [id, l] = cands[0];
+      s.elementId = id; s.player = nameOf(id); s.inferred = true; l.shots--; if (onT(s)) l.sot--; if (s.outcome === 'goal') l.goals--; progress = true;
+    }
+    if (!progress) break;
+  }
+  // Still ambiguous: keep the two or three players it must have been.
+  for (const s of shots.filter((x) => x.elementId === null)) {
+    const c = [...left.entries()].filter(([, l]) => l.side === s.team && l.shots > 0 && (s.outcome === 'goal' ? l.goals > 0 : true) && (onT(s) ? l.sot > 0 : true));
+    if (c.length >= 2 && c.length <= 3) s.candidates = c.map(([id]) => nameOf(id));
+  }
+}

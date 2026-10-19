@@ -158,7 +158,7 @@ export function shotRow(s) {
   return {
     minute: num(s.minute), added: num(s.added_time), isHome: s.is_home === 'True', elementId: num(s.player_id), player: s.player_name || null,
     outcome: s.outcome || null, situation: s.situation || null, bodyPart: s.body_part || null, xg: num(s.xg), xgot: num(s.xgot),
-    x: num(s.start_x), y: num(s.start_y),
+    x: num(s.start_x), y: num(s.start_y), gmY: num(s.goal_mouth_y), gmZ: num(s.goal_mouth_z),
   };
 }
 

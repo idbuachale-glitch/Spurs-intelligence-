@@ -15,12 +15,17 @@ function place(sh) { // shot start in pitch pixels
 }
 function target(sh, p, seed) { // where the ball ends, by outcome
   const gy = p.top ? -2 : H + 2; const mid = W / 2; const r = (seed % 100) / 100;
-  if (sh.outcome === 'goal') return { x: GOAL_L + 6 + r * (GOAL_R - GOAL_L - 12), y: gy };
+  // Where the shot crossed the goal line, when recorded (goal mouth runs ~44.6–55.4 across).
+  const gm = sh.gmY !== null && sh.gmY !== undefined ? clampN((sh.gmY - 50) / 5.4, -3, 3) * ((GOAL_R - GOAL_L) / 2) * (p.top ? 1 : -1) : null;
+  if (sh.outcome === 'goal') return { x: gm !== null ? mid + clampN(gm, -(GOAL_R - GOAL_L) / 2 + 3, (GOAL_R - GOAL_L) / 2 - 3) : GOAL_L + 6 + r * (GOAL_R - GOAL_L - 12), y: gy };
+  if (gm !== null && sh.outcome === 'miss') return { x: mid + gm, y: gy };
+  if (gm !== null && sh.outcome === 'save') return { x: mid + gm * 0.9, y: p.top ? 6 : H - 6 };
   if (sh.outcome === 'save') return { x: mid + (r - 0.5) * 18, y: p.top ? 6 : H - 6 };
   if (sh.outcome === 'block' || sh.outcome === 'blocked') return { x: p.x + (mid - p.x) * 0.25, y: p.y + (gy - p.y) * 0.22 };
   if (/post|bar|woodwork/i.test(sh.outcome || '')) return { x: r > 0.5 ? GOAL_R : GOAL_L, y: p.top ? 0 : H };
   return { x: r > 0.5 ? GOAL_R + 10 + r * 24 : GOAL_L - 10 - r * 24, y: gy }; // miss
 }
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const OUT = { goal: 'GOAL!', save: 'Saved', miss: 'Off target', block: 'Blocked', blocked: 'Blocked', post: 'Hit the woodwork' };
 
 export function replayHtml(m) {
@@ -66,11 +71,11 @@ export function bindReplay(m) {
     marks();
     const p = place(sh); const t = target(sh, p, Math.round((sh.xg || 0) * 10000) + i * 37);
     set(shooter, { cx: p.x, cy: p.y, class: `rp-shooter ${sh.team}` });
-    set(nm, { x: Math.min(W - 4, Math.max(4, p.x)), y: p.y + (p.top ? 18 : -12), 'text-anchor': p.x < 60 ? 'start' : p.x > W - 60 ? 'end' : 'middle' }); nm.textContent = sh.player || '';
+    set(nm, { x: Math.min(W - 4, Math.max(4, p.x)), y: p.y + (p.top ? 18 : -12), 'text-anchor': p.x < 60 ? 'start' : p.x > W - 60 ? 'end' : 'middle' }); nm.textContent = sh.player || (sh.candidates ? `${sh.candidates[0]}?` : '');
     set(xgT, { x: p.x, y: p.y + (p.top ? -12 : 22), 'text-anchor': 'middle' }); xgT.textContent = `xG ${fmtPlain(sh.xg, 2)}`;
     const [s, o] = scoreAt(i - 1 < 0 ? -1 : i - 1); $('rp-score').textContent = `${s} – ${o}`;
     const min = `${sh.minute}${sh.added ? `+${sh.added}` : ''}′`;
-    $('rp-caption').innerHTML = `<strong>${min}</strong> ${sh.player ? `${esc(sh.player)} (${sh.team === 'spurs' ? 'Spurs' : esc(m.fixture.opponent)})` : `${sh.team === 'spurs' ? 'Spurs' : esc(m.fixture.opponent)} shot (player not recorded)`} · ${esc((sh.situation || '').replace(/-/g, ' '))}${sh.bodyPart ? ` · ${esc(sh.bodyPart.replace(/-/g, ' '))}` : ''} · <span class="rp-out ${sh.outcome}">${esc(OUT[sh.outcome] || sh.outcome || '')}</span>`;
+    $('rp-caption').innerHTML = `<strong>${min}</strong> ${sh.player ? `${esc(sh.player)} (${sh.team === 'spurs' ? 'Spurs' : esc(m.fixture.opponent)})${sh.inferred ? ' <span class="faint tiny">· worked out from match stats</span>' : ''}` : (sh.candidates ? `${esc(sh.candidates.join(' or '))} (${sh.team === 'spurs' ? 'Spurs' : esc(m.fixture.opponent)})` : `${sh.team === 'spurs' ? 'Spurs' : esc(m.fixture.opponent)} shot (player not recorded)`)} · ${esc((sh.situation || '').replace(/-/g, ' '))}${sh.bodyPart ? ` · ${esc(sh.bodyPart.replace(/-/g, ' '))}` : ''} · <span class="rp-out ${sh.outcome}">${esc(OUT[sh.outcome] || sh.outcome || '')}</span>`;
     $('rp-count').textContent = `${i + 1} / ${list.length}`;
     const finish = () => { if (!document.body.contains(root)) return;
       set(ball, { cx: t.x, cy: t.y });

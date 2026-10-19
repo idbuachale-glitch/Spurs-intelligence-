@@ -1144,7 +1144,7 @@ VIEWS.replays = async (id) => {
   return `<div class="section-head"><h1>Goal replays</h1><span class="muted small">Every chance, played back in order</span></div>
     <div class="filters">${matchSelect(list, cur.id, 'rp-match')}</div>
     <section class="hero" style="padding:16px"><div class="fixture-board"><div class="team">${cur.home ? spursCrest('big') : oc(cur, 'big')}${esc(cur.home ? 'Spurs' : cur.opponent)}</div><div class="mid"><div class="clock">${cur.home ? `${cur.score.spurs}–${cur.score.opp}` : `${cur.score.opp}–${cur.score.spurs}`}</div><div class="vs">${esc(fmtDate(cur.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}</div></div><div class="team right">${cur.home ? oc(cur, 'big') : spursCrest('big')}${esc(cur.home ? cur.opponent : 'Spurs')}</div></div>
-      ${goals.length ? `<p class="small" style="margin:8px 0 0;text-align:center">${goals.map((g) => `⚽ ${esc(g.player || `${g.team === 'spurs' ? 'Spurs' : cur.opponent} goal`)} ${g.minute}${g.added ? `+${g.added}` : ''}′`).join(' · ')}</p>` : ''}</section>
+      ${goals.length ? `<p class="small" style="margin:8px 0 0;text-align:center">${goals.map((g) => `⚽ ${esc(g.player || (g.candidates ? g.candidates.join(' or ') : `${g.team === 'spurs' ? 'Spurs' : cur.opponent} goal`))} ${g.minute}${g.added ? `+${g.added}` : ''}′`).join(' · ')}</p>` : ''}</section>
     ${m ? replayHtml(m) || '<div class="empty section">Not enough shot data for this match.</div>' : ''}
     <p class="small muted"><a href="#/match/${encodeURIComponent(cur.id)}">Full Match Centre →</a></p>`;
 };
