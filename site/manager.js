@@ -50,8 +50,28 @@ function rate(p, pct) {
   return { ovr: Math.round(56 + o * 0.4), att: p.pos === 'GK' ? 0 : avg(ATT.map((k) => [k, 1])), def: avg(p.pos === 'GK' ? DEFK.GK : DEFK.other), few: shrink < 1, per90 };
 }
 
+// ---------- Natural roles ----------
+// The data only gives broad positions (DEF/MID/FWD). These are the roles each player
+// is known to play; a natural role gets the full rating, another role in his line 88%,
+// and a different line 80%. Players not listed keep their broad position.
+const ROLES = {
+  Gray: ['RB', 'CM', 'DM'], 'Pedro Porro': ['RB'], Udogie: ['LB'], 'Van de Ven': ['CB', 'LB'], 'Van Hecke': ['CB'], Senesi: ['CB', 'LB'], Tosin: ['CB'], Davies: ['LB', 'CB'],
+  Tonali: ['CM', 'DM'], Bentancur: ['CM', 'DM'], Gallagher: ['CM', 'DM'], Bergvall: ['CM', 'AM'], Maddison: ['AM', 'CM'], Xavi: ['AM', 'LW'],
+  Kudus: ['RW', 'AM'], Kulusevski: ['RW', 'AM'], Odobert: ['LW', 'RW'], Mudryk: ['LW'], 'Sávio': ['RW', 'LW'], Tel: ['LW', 'ST'], Solanke: ['ST'], Marmoush: ['ST', 'LW'],
+};
+const ROLE_OF = { LWB: 'LB', RWB: 'RB', LM: 'LW', RM: 'RW' };
+const slotRole = (slot) => ROLE_OF[slot.label] || slot.label;
+const naturalIn = (player, slot) => (ROLES[player.name] || []).includes(slotRole(slot));
+
 // ---------- Team strength ----------
-const fitPen = (player, slot) => (slot.pos.includes(player.pos) ? 1 : player.pos === 'GK' || slot.pos.includes('GK') ? 0.3 : 0.8);
+const fitPen = (player, slot) => {
+  if (player.pos === 'GK' || slot.pos.includes('GK')) return player.pos === 'GK' && slot.pos.includes('GK') ? 1 : 0.3;
+  if (naturalIn(player, slot)) return 1;
+  const roles = ROLES[player.name];
+  if (slot.pos.includes(player.pos)) return roles ? 0.88 : 1;
+  // A listed natural role outside his broad line (e.g. a midfielder at right-back) still counts.
+  return 0.8;
+};
 const W_ATT = { GK: 0, DEF: 0.35, MID: 0.8, FWD: 1 }; const W_DEF = { GK: 1.3, DEF: 1, MID: 0.6, FWD: 0.15 };
 function strength(xi) { // xi: [{ player, slot, energy, sentOff }]
   let a = 0; let aw = 0; let d = 0; let dw = 0;
@@ -72,9 +92,10 @@ function probs(ls, lo) { let w = 0; let dr = 0; let l = 0; for (let i = 0; i <= 
 function autoPick(slots, players, taken = new Set()) {
   const out = slots.map(() => null); const used = new Set(taken);
   const order = slots.map((sl, i) => i).sort((a, b) => (slots[a].pos.includes('GK') ? -1 : slots[b].pos.includes('GK') ? 1 : 0));
+  // Natural-role specialists first (full-backs, wingers), then the rest by rating in the slot.
+  order.sort((a, b) => (slots[a].pos.includes('GK') ? -1 : slots[b].pos.includes('GK') ? 1 : ['LB', 'RB', 'LWB', 'RWB', 'ST'].includes(slots[b].label) - ['LB', 'RB', 'LWB', 'RWB', 'ST'].includes(slots[a].label)));
   for (const i of order) {
-    const best = players.filter((p) => !used.has(p.id) && slots[i].pos.includes(p.pos)).sort((a, b) => b.r.ovr - a.r.ovr)[0]
-      || players.filter((p) => !used.has(p.id) && p.pos !== 'GK').sort((a, b) => b.r.ovr - a.r.ovr)[0];
+    const best = players.filter((p) => !used.has(p.id) && (p.pos === 'GK') === slots[i].pos.includes('GK')).sort((a, b) => b.r.ovr * fitPen(b, slots[i]) - a.r.ovr * fitPen(a, slots[i]))[0];
     if (best) { out[i] = best.id; used.add(best.id); }
   }
   return out;
@@ -144,7 +165,7 @@ export async function managerView() {
       <div>
         <div class="panel" id="mg-odds"></div>
         <div class="panel section" id="mg-bench"></div>
-        <p class="source">Ratings (56–96): each player's per-90 figures this season ranked against Premier League players in his position (FPL/Opta). Players with few minutes are rated from fewer games and pulled towards average. Out-of-position players lose 20%. Injured, suspended and loaned-out players can't be picked. The match starts from the site's real forecast for this fixture (expected goals ${fmtPlain(ctx.base.spurs, 2)}–${fmtPlain(ctx.base.opp, 2)} with the strongest XI) and adjusts it for your choices.</p>
+        <p class="source">Ratings (56–96): each player's per-90 figures this season ranked against Premier League players in his position (FPL/Opta). Players with few minutes are rated from fewer games and pulled towards average. A player in his natural role gets his full rating, another role in his line 88%, a different line 80%. Injured, suspended and loaned-out players can't be picked. The match starts from the site's real forecast for this fixture (expected goals ${fmtPlain(ctx.base.spurs, 2)}–${fmtPlain(ctx.base.opp, 2)} with the strongest XI) and adjusts it for your choices.</p>
       </div>
     </div>
     <div id="mg-sheet" class="mgr-sheet" hidden></div>`;
@@ -160,7 +181,7 @@ function drawSetup() {
   document.getElementById('mg-pitch').innerHTML = pitchLines() + slots.map((sl, i) => {
     const p = xi[i].player;
     const r = p ? ratingIn(p, sl) : null;
-    const warn = p && !sl.pos.includes(p.pos);
+    const warn = p && fitPen(p, sl) < 0.9;
     return `<button class="pslot${p ? '' : ' empty'}${warn ? ' oop' : ''}" data-slot="${i}" style="left:${sl.x}%;top:${sl.y}%"><span class="pr">${r ?? '+'}</span><span class="pn">${p ? esc(p.name) : sl.label}</span><span class="pl">${sl.label}${warn ? ' ⚠' : ''}</span></button>`;
   }).join('');
   const used = new Set(G.pick);
@@ -188,7 +209,7 @@ function openPicker(i) {
   const list = G.ctx.avail.slice().sort((a, b) => ratingIn(b, sl) - ratingIn(a, sl));
   const sheet = document.getElementById('mg-sheet');
   sheet.innerHTML = `<div class="mgr-sheet-in"><div class="section-head"><h3 style="margin:0">Pick for ${sl.label}</h3><button class="btn ghost" data-close>Close</button></div>
-    <div class="mg-list">${list.map((p) => { const where = G.pick.indexOf(p.id); return `<button class="mg-row pick${p.id === cur ? ' on' : ''}" data-pid="${p.id}"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} ${tag(p)}${where >= 0 && p.id !== cur ? `<span class="faint tiny"> in XI (${FORMATIONS[G.form].slots[where].label}) · swap</span>` : ''}${!sl.pos.includes(p.pos) ? '<span class="faint tiny"> out of position</span>' : ''}</span><strong>${ratingIn(p, sl)}</strong></button>`; }).join('')}</div></div>`;
+    <div class="mg-list">${list.map((p) => { const where = G.pick.indexOf(p.id); return `<button class="mg-row pick${p.id === cur ? ' on' : ''}" data-pid="${p.id}"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} ${tag(p)}${where >= 0 && p.id !== cur ? `<span class="faint tiny"> in XI (${FORMATIONS[G.form].slots[where].label}) · swap</span>` : ''}${naturalIn(p, sl) ? '<span class="tiny" style="color:var(--win)"> natural</span>' : fitPen(p, sl) < 0.9 ? '<span class="faint tiny"> out of position</span>' : ''}</span><strong>${ratingIn(p, sl)}</strong></button>`; }).join('')}</div></div>`;
   sheet.hidden = false;
   sheet.onclick = (e) => {
     if (e.target === sheet || e.target.closest('[data-close]')) { sheet.hidden = true; return; }
