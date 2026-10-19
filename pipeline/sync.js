@@ -22,6 +22,7 @@ import { runLive, attachStoredLive } from './derive/live.js';
 import { weeklyReports } from './derive/weekly.js';
 import * as espn from './adapters/espn.js';
 import { lineupEffect, teamIdFor } from './derive/lineups.js';
+import { gameReport } from './derive/gamereport.js';
 import { num } from './lib/validate.js';
 import * as af from './adapters/apifootball.js';
 import { ratings, expectedGoals, matchProbabilities, simulateSeason, priorFromElo, absencesFrom, backtest, PRIOR_MATCHES } from './derive/simulate.js';
@@ -477,6 +478,43 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
       health: { ok: (d) => ok('api-football', af.label, d), fail: (e) => fail('api-football', af.label, e) } });
     if (liveRes.match) log.info('live window', { match: liveRes.match, notes: liveRes.notes });
   } catch (err) { log.error('live feed failed', { error: String(err.message || err) }); }
+
+  // ---------------- Game reports (De Zerbi tracker) ----------------
+  // Team sheets for finished Spurs matches come from ESPN once each (cached for good);
+  // the report itself is rebuilt from the stored figures on every run.
+  try {
+    const luDir2 = S('lineups');
+    const missFile = path.join(luDir2, 'misses.json'); const misses = readJson(missFile, {});
+    let fetched = 0;
+    const done = built.fixtures.filter((f) => f.result && f.kickoff && !f.friendly && espn.LEAGUES[f.competition] && now.getTime() - Date.parse(f.kickoff) > 2.5 * 3600e3);
+    const sheetOf = (f) => readJson(path.join(luDir2, `match-${f.id}.json`), null);
+    if (espn.enabled()) {
+      for (const f of done) {
+        if (fetched >= 8 || sheetOf(f)) continue;
+        const ms = misses[f.id];
+        if (ms && (ms.tries >= 4 || now.getTime() - Date.parse(ms.at) < 6 * 3600e3)) continue;
+        const ymd = f.kickoff.slice(0, 10).replace(/-/g, '');
+        try {
+          fetched++;
+          const board = await espn.scoreboard(espn.LEAGUES[f.competition], ymd);
+          const ev = board.find((e) => /tottenham/i.test(`${e.home} ${e.away}`));
+          const got = ev ? await espn.lineups(espn.LEAGUES[f.competition], ev.id) : null;
+          if (got) { writeJson(path.join(luDir2, `match-${f.id}.json`), { retrievedAt: nowIso, espnEvent: ev.id, ...got }); delete misses[f.id]; } else misses[f.id] = { tries: (ms?.tries || 0) + 1, at: nowIso };
+        } catch (err) { misses[f.id] = { tries: (ms?.tries || 0) + 1, at: nowIso, error: String(err.message || err) }; }
+      }
+      writeJson(missFile, misses);
+    }
+    let prevSheet = null; let prevOpp = null; let reports = 0;
+    for (const f of done.concat(built.fixtures.filter((x) => x.result && !x.friendly && !espn.LEAGUES[x.competition]))
+      .sort((a, b) => Date.parse(a.kickoff) - Date.parse(b.kickoff))) {
+      const mf = built.files[`matches/${f.id}.json`]; if (!mf) continue;
+      const sheet = espn.LEAGUES[f.competition] ? sheetOf(f) : null;
+      const gr = gameReport({ match: mf, sheet, prevSheet, prevOpp, teamMatches: built.teamMatches, leagueMetrics: built.teamSummary.leagueRanks?.metrics || {} });
+      if (gr) { mf.gameReport = gr; reports++; }
+      if (sheet) { prevSheet = sheet; prevOpp = f.opponent; }
+    }
+    if (fetched) ok('espn', espn.label, { records: { teamSheetsFetched: fetched, reports } });
+  } catch (err) { log.error('game reports failed', { error: String(err.message || err) }); }
 
   // ---------------- Write (with no-partial-overwrite protection) ----------------
   let changed = 0;

@@ -200,6 +200,7 @@ const matchPoints = (ms) => ms.map((m) => ({
   title: `${m.home ? 'v' : '@'} ${m.opponent}`,
   sub: `${fmtDate(m.kickoff, { weekday: 'short', day: 'numeric', month: 'short' })} · Premier League`,
   result: m.result, score: m.gf !== null && m.gf !== undefined ? `${m.gf}–${m.ga}` : '',
+  crest: badgeOf(m).url,
   links: [['Match breakdown', `#/breakdown/${encodeURIComponent(m.matchId)}`], ['Match Centre', `#/match/${encodeURIComponent(m.matchId)}`]],
 }));
 const VIEWS = {};
@@ -1297,7 +1298,7 @@ AFTER.simulator = async () => {
 };
 
 // ---------------- De Zerbi style tracker ----------------
-VIEWS.style = async () => {
+VIEWS.style = async (sel) => {
   const team = await loadSeason('team.json');
   const ms = team.matches.filter((m) => m.adv);
   if (ms.length < 2) return '<h1>De Zerbi tracker</h1><div class="empty">The tracker needs at least two Premier League matches with detailed data.</div>';
@@ -1331,12 +1332,59 @@ VIEWS.style = async () => {
     const series = [{ name: mt.label, color: 'var(--cyan)', values: vals }, { name: '3-match average', color: 'var(--draw)', values: roll(vals), dash: true }];
     if (mt.league !== null && mt.league !== undefined) series.push({ name: 'League average', color: 'var(--faint)', values: vals.map(() => mt.league), dash: true, ref: true });
     return `<div class="panel"><div class="section-head"><h3>${esc(mt.label)}</h3><span class="small" style="color:${col};font-weight:600">${esc(verdict)}</span></div>
-      ${lineChart({ labels, series, height: 200, format: (v) => v.toFixed(mt.dp ?? 0) + mt.unit, readout: false, points: matchPoints(ms), title: mt.label })}<p class="small muted" style="margin-top:6px">${esc(mt.why)}</p></div>`;
+      ${lineChart({ labels, series, height: 200, format: (v) => v.toFixed(mt.dp ?? 0) + mt.unit, readout: false, points: matchPoints(ms).map((pt, i) => ({ ...pt, links: [['How Spurs played', `#/style/${encodeURIComponent(ms[i].matchId)}`], ...pt.links] })), title: mt.label, badges: ms.map(badgeOf) })}<p class="small muted" style="margin-top:6px">${esc(mt.why)}</p></div>`;
   };
   return `<div class="section-head"><h1>De Zerbi tracker</h1><span class="label-observed">Measured, match by match</span></div>
   <p class="muted">Is Spurs' play moving towards what De Zerbi's teams are known for: keeping the ball, playing in the opposition half, passing securely and creating good chances? Each chart shows every Premier League match this season, a three-match average and the league average. Trends compare the earlier matches with the more recent ones.</p>
+  ${gameReportShell(ms, sel)}
   <div class="grid two section">${metrics.map(card).join('')}</div>
-  <p class="source">Match data from FotMob via FPL Core Insights, ${ms.length} Premier League matches. Pressing intensity (PPDA) and build-up shape aren't in the free data, so they can't be tracked.</p>`;
+  <p class="source">Match data from FotMob via FPL Core Insights, ${ms.length} Premier League matches. PPDA is estimated from passes and defensive actions; build-up shapes and player movement need tracking data, which isn't in the free data.</p>`;
+};
+// Game report: one match at a time, chosen from the crest strip or a chart card.
+function gameReportShell(ms, sel) {
+  const pick = ms.find((m) => m.matchId === sel) || ms[ms.length - 1];
+  return `<section class="panel section" id="gr"><div class="section-head"><h2>How Spurs played</h2><span class="label-observed">From the match data</span></div>
+    <div class="gr-strip" role="tablist">${ms.map((m) => { const b = badgeOf(m); return `<button class="gr-chip" role="tab" data-gr="${esc(m.matchId)}" aria-selected="${m === pick}" title="${esc(`${m.home ? 'v' : '@'} ${m.opponent}`)}">${b.url ? `<img src="${esc(b.url)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<small>${esc(b.short)}</small><em class="${m.result === 'W' ? 'w' : m.result === 'L' ? 'l' : 'd'}">${m.gf}–${m.ga}</em></button>`; }).join('')}</div>
+    <div id="gr-body" data-id="${esc(pick.matchId)}"><div class="skeleton" style="height:160px"></div></div></section>`;
+}
+const grFmt = (v, r) => (v === null || v === undefined ? '<span class="na">—</span>' : `${Number(v).toFixed(r.dp)}${r.unit}`);
+function gameReportHtml(m) {
+  const g = m?.gameReport; const f = m?.fixture;
+  if (!g) return '<div class="empty">No detailed match data for this game yet. It appears automatically once the match statistics are published.</div>';
+  const su = g.setup;
+  const better = (r) => { if (r.spurs === null || r.season === null) return ''; const d = r.spurs - r.season; if (Math.abs(d) < Math.max(Math.abs(r.season) * 0.08, 10 ** -r.dp)) return ''; return (d > 0) !== r.lowerBetter ? 'up' : 'down'; };
+  const setup = su ? `<div class="gr-setup">
+      <div class="gr-forms"><div><span class="tiny faint">Spurs</span><strong>${esc(su.formation || '—')}</strong></div><div class="faint">v</div><div><span class="tiny faint">${esc(f.opponent)}</span><strong>${esc(su.oppFormation || '—')}</strong></div></div>
+      <div class="gr-lines">${su.lines.map((l) => `<div><span class="tiny faint">${esc(l.line)}</span><span>${l.players.map(esc).join(' · ')}</span></div>`).join('')}</div>
+      ${su.subs.length ? `<div class="gr-subs"><span class="tiny faint">Substitutions</span>${su.subs.map((x) => `<span>${x.minute ? `<b>${esc(x.minute)}</b> ` : ''}${esc(x.on)}${x.off ? ` <span class="faint">for</span> ${esc(x.off)}` : ''}</span>`).join('')}</div>` : ''}
+      ${su.changes ? `<p class="small muted" style="margin:6px 0 0">${su.changes.in.length ? `Changes from the ${esc(su.changes.vs)} game: <strong>${su.changes.in.map(esc).join(', ')}</strong> in, ${su.changes.out.map(esc).join(', ')} out.` : `Unchanged XI from the ${esc(su.changes.vs)} game.`}${su.changes.formationBefore && su.changes.formationBefore !== su.formation ? ` Shape changed from ${esc(su.changes.formationBefore)}.` : ''}</p>` : ''}
+    </div>` : '<p class="small faint">Team sheet (formation and XI) not available for this match.</p>';
+  const phase = (p) => `<details class="gr-phase"${p.key === 'build' ? ' open' : ''}><summary><strong>${esc(p.title)}</strong><span class="faint gr-chev">▾</span></summary>
+      ${p.read.length ? `<ul class="gr-read">${p.read.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      <div class="table-wrap"><table class="gr-table"><thead><tr><th></th><th class="r">Spurs</th><th class="r">${esc(f.opponentShort || f.opponent)}</th><th class="r" title="Spurs season average">Avg</th><th class="r" title="Premier League average">PL avg</th></tr></thead><tbody>
+      ${p.rows.filter((r) => r.spurs !== null || r.opp !== null).map((r) => `<tr><td>${esc(r.label)}</td><td class="r gr-v ${better(r)}">${grFmt(r.spurs, r)}</td><td class="r">${grFmt(r.opp, r)}</td><td class="r faint">${grFmt(r.season, r)}</td><td class="r faint">${grFmt(r.league, r)}</td></tr>`).join('')}</tbody></table></div></details>`;
+  return `<div class="gr-head">${crestOf(f.opponent, f.opponentTeamId, 'lg')}<div><strong>${f.home ? 'Spurs v ' : ''}${esc(f.opponent)}${f.home ? '' : ' v Spurs'}</strong><span class="small muted">${esc(fmtDate(f.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))} · ${esc(f.competition)} · ${f.home ? 'Home' : 'Away'}</span></div><span class="ic-res ${f.result === 'W' ? 'w' : f.result === 'L' ? 'l' : 'd'}">${esc(f.result)} ${f.score.spurs}–${f.score.opp}</span></div>
+    <div class="gr-summary">${g.summary.map((x) => `<p>${esc(x)}</p>`).join('')}</div>
+    ${g.tags?.length ? `<div class="gr-tags">${g.tags.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''}
+    <h3>The set-up</h3>${setup}
+    <h3>Phase by phase</h3>${g.phases.map(phase).join('')}
+    ${g.flow.length ? `<h3>How the game unfolded</h3><ul class="gr-read">${g.flow.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    ${g.standouts.length ? `<h3>Standouts</h3><div class="statlist">${g.standouts.map((s) => `<div class="statrow"><span>${esc(s.label)}</span><span class="v">${esc(s.name)} · ${esc(String(s.value))}</span></div>`).join('')}</div>` : ''}
+    <p class="small faint" style="margin-top:12px">${esc(g.notMeasured)}</p>
+    <p class="source">${esc(g.label)} Season averages from ${g.seasonMatches} other match${g.seasonMatches === 1 ? '' : 'es'}. Sources: ${g.sources.map(esc).join('; ')}. In the tables, Avg = Spurs' season average and PL avg = league average; green/red marks a Spurs figure clearly better/worse than their average. <a href="#/breakdown/${encodeURIComponent(f.id)}">Full match breakdown →</a></p>`;
+}
+AFTER.style = (sel) => {
+  const body = document.getElementById('gr-body'); if (!body) return;
+  const show = async (id) => {
+    body.dataset.id = id;
+    document.querySelectorAll('.gr-chip').forEach((c) => c.setAttribute('aria-selected', c.dataset.gr === id));
+    const m = await loadSeason(`matches/${id}.json`, state.season, { optional: true });
+    if (body.dataset.id === id) body.innerHTML = gameReportHtml(m);
+  };
+  document.querySelector('.gr-strip')?.addEventListener('click', (e) => { const c = e.target.closest('[data-gr]'); if (c) show(c.dataset.gr); });
+  show(body.dataset.id);
+  const chip = document.querySelector('.gr-chip[aria-selected="true"]'); chip?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  if (sel) requestAnimationFrame(() => document.getElementById('gr')?.scrollIntoView({ block: 'start' }));
 };
 
 // ---------------- Data sources & settings ----------------

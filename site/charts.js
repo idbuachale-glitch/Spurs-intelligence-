@@ -68,7 +68,7 @@ export function lineChart({ series, labels, height = 230, yLabel = '', format = 
     const main = series[0].values[i]; const rv = ref ? ref.values[i] : null;
     const delta = ref && main !== null && main !== undefined && rv !== null && rv !== undefined ? `<p class="ic-delta">${esc(format(Math.abs(main - rv)).replace(/%$/, ' percentage points'))} ${main >= rv ? 'above' : 'below'} the ${esc(ref.name.toLowerCase())}</p>` : '';
     const res = pt.result ? `<span class="ic-res ${pt.result === 'W' ? 'w' : pt.result === 'L' ? 'l' : 'd'}">${esc(pt.result)} ${esc(pt.score || '')}</span>` : '';
-    return `<div class="ic-head"><div><strong>${esc(pt.title)}</strong><span>${esc(pt.sub || '')}</span></div>${res}</div><div class="ic-rows">${rows}</div>${delta}${(pt.links || []).length ? `<div class="ic-links">${pt.links.map(([l, h]) => `<a href="${esc(h)}">${esc(l)} →</a>`).join('')}</div>` : ''}`;
+    return `<div class="ic-head">${pt.crest ? `<img class="ic-crest" src="${esc(pt.crest)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<div><strong>${esc(pt.title)}</strong><span>${esc(pt.sub || '')}</span></div>${res}</div><div class="ic-rows">${rows}</div>${delta}${(pt.links || []).length ? `<div class="ic-links">${pt.links.map(([l, h]) => `<a href="${esc(h)}">${esc(l)} →</a>`).join('')}</div>` : ''}`;
   });
   const xs = labels.map((_, i) => +x(i).toFixed(1));
   const lastI = labels.length - 1;

@@ -21,7 +21,7 @@ export async function scoreboard(league, ymd) {
   });
 }
 
-// Confirmed line-ups for one match: null until the teams are announced.
+// Team sheets and key events for one match. Returns null until both sides have 11 starters.
 export async function lineups(league, eventId) {
   const b = await get(`/${league}/summary?event=${eventId}`);
   const rosters = Array.isArray(b?.rosters) ? b.rosters : [];
@@ -29,11 +29,19 @@ export async function lineups(league, eventId) {
   for (const r of rosters) {
     const starters = (r.roster || []).filter((p) => p.starter);
     if (starters.length < 11) continue;
+    const pl = (p) => ({ name: p.athlete?.displayName || p.athlete?.fullName || '', short: p.athlete?.shortName || '', pos: p.position?.abbreviation || null, num: p.jersey || null, place: p.formationPlace ?? null, subbedIn: Boolean(p.subbedIn), subbedOut: Boolean(p.subbedOut) });
     out[r.homeAway] = {
       team: r.team?.displayName || null, formation: r.formation || null,
-      starters: starters.map((p) => ({ name: p.athlete?.displayName || p.athlete?.fullName || '', short: p.athlete?.shortName || '', pos: p.position?.abbreviation || null, num: p.jersey || null })),
-      subs: (r.roster || []).filter((p) => !p.starter).map((p) => ({ name: p.athlete?.displayName || '', pos: p.position?.abbreviation || null })),
+      starters: starters.map(pl),
+      subs: (r.roster || []).filter((p) => !p.starter).map(pl),
     };
   }
-  return out.home && out.away ? out : null;
+  if (!(out.home && out.away)) return null;
+  // Goals, cards and substitutions with their minutes (present once the match has started).
+  out.keyEvents = (Array.isArray(b?.keyEvents) ? b.keyEvents : []).map((e) => ({
+    type: e.type?.text || e.type?.type || null, clock: e.clock?.displayValue || null, team: e.team?.displayName || null,
+    text: e.text || e.shortText || null, players: (e.participants || []).map((x) => x.athlete?.displayName).filter(Boolean),
+  })).filter((e) => e.type);
+  out.state = b?.header?.competitions?.[0]?.status?.type?.state || null;
+  return out;
 }

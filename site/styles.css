@@ -662,3 +662,46 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .lock-banner { margin-top: 12px; }
 #mg-form button[disabled] { opacity: .45; cursor: default; }
 .lu-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; } .lu-list li { display: flex; gap: 8px; align-items: center; font-size: .9rem; } .lu-list .mg-pos { min-width: 34px; }
+
+/* De Zerbi tracker: game report */
+.ic-crest { width: 26px; height: 26px; object-fit: contain; flex: none; margin-right: 8px; }
+.gr-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.gr-strip::-webkit-scrollbar { display: none; }
+.gr-chip { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 58px; padding: 8px 4px 6px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; color: var(--text); }
+.gr-chip img { width: 30px; height: 30px; object-fit: contain; }
+.gr-chip > span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--bg-2); font-size: 0.7rem; font-weight: 700; }
+.gr-chip em { font-style: normal; font-size: 0.72rem; font-weight: 700; padding: 1px 6px; border-radius: 6px; }
+.gr-chip em.w { color: var(--win); } .gr-chip em.l { color: var(--loss); } .gr-chip em.d { color: var(--draw); }
+.gr-chip[aria-selected="true"] { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan) inset, 0 0 18px rgba(60, 232, 255, 0.15); }
+.gr-head { display: flex; align-items: center; gap: 12px; margin: 6px 0 12px; }
+.gr-head > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gr-head img { width: 40px; height: 40px; object-fit: contain; }
+.gr-summary { border-left: 3px solid var(--cyan); padding: 2px 0 2px 12px; }
+.gr-summary p { margin: 0 0 8px; line-height: 1.5; }
+.gr-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.gr-tags span { font-size: 0.78rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--cyan); }
+#gr-body h3 { margin: 18px 0 8px; }
+.gr-setup { border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.gr-forms { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+.gr-forms > div:not(.faint) { display: flex; flex-direction: column; }
+.gr-forms strong { font-size: 1.35rem; color: var(--cyan); }
+.gr-lines > div, .gr-subs { display: grid; grid-template-columns: 84px 1fr; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 0.9rem; }
+.gr-subs { grid-template-columns: 84px 1fr; }
+.gr-subs > span:not(:first-child) { grid-column: 2; }
+.gr-subs b { color: var(--cyan); font-weight: 600; }
+.gr-phase { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
+.gr-phase summary { display: flex; justify-content: space-between; align-items: center; padding: 12px; cursor: pointer; list-style: none; }
+.gr-phase summary::-webkit-details-marker { display: none; }
+.gr-phase[open] summary { border-bottom: 1px solid var(--line); }
+.gr-phase .table-wrap { padding: 0 6px 8px; }
+.gr-read { margin: 10px 0; padding-left: 20px; }
+.gr-read li { margin-bottom: 6px; line-height: 1.45; }
+.gr-table td:first-child { white-space: normal; min-width: 130px; }
+.gr-table th, .gr-table td { padding: 7px 6px; font-size: 0.88rem; }
+.gr-v.up { color: var(--win); font-weight: 700; } .gr-v.down { color: var(--loss); font-weight: 700; }
+.ic-head .ic-crest + div { flex: 1; min-width: 0; }
+.gr-phase[open] .gr-chev { transform: rotate(180deg); } .gr-chev { transition: transform .2s; }
+.gr-table { width: 100%; table-layout: auto; }
+.gr-table th, .gr-table td { padding: 7px 4px; font-size: 0.82rem; }
+.gr-table td:first-child { min-width: 0; width: 42%; }
+.gr-chip small { font-size: 0.66rem; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
