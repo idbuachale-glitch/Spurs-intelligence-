@@ -1,0 +1,55 @@
+name: Matchday clock
+
+# GitHub's scheduled runs are best-effort and can be skipped for long stretches when its
+# servers are busy (on 19 Oct 2026 none ran for an hour mid-match). This workflow only needs
+# ONE scheduled run to land in the match window: it then stays running and starts the sync
+# every 4 minutes until full time, so live updates no longer depend on GitHub's scheduler.
+
+on:
+  schedule:
+    - cron: '4,14,24,34,44,54 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: matchday-clock
+  cancel-in-progress: false
+
+jobs:
+  clock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: site/data
+      - name: Keep the sync running through the match
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Window: 100 minutes before kick-off (line-ups) to 155 minutes after (full time + stats).
+          window_end() {
+            git fetch -q --depth=1 origin main && git checkout -q origin/main -- site/data/seasons.json site/data/seasons 2>/dev/null || true
+            node -e '
+              const fs=require("fs");const cur=JSON.parse(fs.readFileSync("site/data/seasons.json")).current;
+              const fx=JSON.parse(fs.readFileSync(`site/data/seasons/${cur}/fixtures.json`)).fixtures;
+              const now=Date.now();
+              const f=fx.find(f=>f.kickoff&&!f.friendly&&(now-Date.parse(f.kickoff))/60000>=-100&&(now-Date.parse(f.kickoff))/60000<=155);
+              process.stdout.write(f?String(Date.parse(f.kickoff)+155*60000):"0");'
+          }
+          end=$(window_end)
+          if [ "$end" = "0" ]; then echo "No Spurs match in its window; nothing to do."; exit 0; fi
+          echo "Match window open until $(date -u -d @$((end/1000)))"
+          while [ $(( $(date +%s) * 1000 )) -lt "$end" ]; do
+            gh workflow run sync.yml -R "$REPO" --ref main && echo "$(date -u +%H:%MZ) sync started" || echo "dispatch failed; retrying next tick"
+            sleep 240
+            end=$(window_end); [ "$end" = "0" ] && break
+          done
+          # One last run shortly after the window to pick up final statistics.
+          gh workflow run sync.yml -R "$REPO" --ref main || true
+          echo "Match window closed."
