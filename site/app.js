@@ -1424,7 +1424,7 @@ AFTER.simulator = async () => {
 
 // ---------------- De Zerbi style tracker ----------------
 VIEWS.style = async (sel) => {
-  const team = await loadSeason('team.json');
+  const [team, table, dzu] = await Promise.all([loadSeason('team.json'), loadSeason('table.json'), loadSeason('dezerbi.json', state.season, { optional: true })]);
   const ms = team.matches.filter((m) => m.adv);
   if (ms.length < 2) return '<h1>De Zerbi tracker</h1><div class="empty">The tracker needs at least two Premier League matches with detailed data.</div>';
   const ranks = team.leagueRanks?.metrics || {};
@@ -1461,10 +1461,87 @@ VIEWS.style = async (sel) => {
   };
   return `<div class="section-head"><h1>De Zerbi tracker</h1><span class="label-observed">Measured, match by match</span></div>
   <p class="muted">Is Spurs' play moving towards what De Zerbi's teams are known for: keeping the ball, playing in the opposition half, passing securely and creating good chances? Each chart shows every Premier League match this season, a three-match average and the league average. Trends compare the earlier matches with the more recent ones.</p>
+  ${changingHtml(ms, metrics)}
   ${gameReportShell(ms, sel)}
-  <div class="grid two section">${metrics.map(card).join('')}</div>
+  ${opponentSplitHtml(ms, table)}
+  ${squadUseHtml(dzu)}
+  <h2 class="section">Match by match</h2>
+  <div class="grid two">${metrics.map(card).join('')}</div>
   <p class="source">Match data from FotMob via FPL Core Insights, ${ms.length} Premier League matches. PPDA is estimated from passes and defensive actions; build-up shapes and player movement need tracking data, which isn't in the free data.</p>`;
 };
+
+// ---- De Zerbi tracker: what's changing (early matches v recent matches) ----
+function changingHtml(ms, metrics) {
+  if (ms.length < 4) return '';
+  const half = Math.floor(ms.length / 2);
+  const rows = metrics.map((mt) => {
+    const vals = ms.map(mt.get).map((v) => (v === null || v === undefined ? null : Number(v)));
+    const a = vals.slice(0, half).filter((v) => v !== null); const b = vals.slice(-half).filter((v) => v !== null);
+    if (a.length < 2 || b.length < 2) return null;
+    const a1 = a.reduce((x, y) => x + y, 0) / a.length; const a2 = b.reduce((x, y) => x + y, 0) / b.length;
+    const rel = (a2 - a1) / (Math.abs(a1) || 1);
+    const better = mt.lower ? rel < 0 : rel > 0;
+    return { mt, a1, a2, rel, state: Math.abs(rel) < 0.08 ? 'flat' : better ? 'up' : 'down' };
+  }).filter(Boolean).sort((x, y) => Math.abs(y.rel) - Math.abs(x.rel));
+  const f = (r, v) => `${fmtPlain(v, r.mt.dp ?? 1)}${r.mt.unit}`;
+  const group = (st, title, cls) => { const g = rows.filter((r) => r.state === st); return g.length ? `<div class="chg ${cls}"><h3>${title}</h3>${g.map((r) => `<div class="chg-row"><span>${esc(r.mt.label)}</span><span class="chg-v">${f(r, r.a1)} → <strong>${f(r, r.a2)}</strong></span></div>`).join('')}</div>` : ''; };
+  return `<section class="panel section"><div class="section-head"><h2>What's changing</h2><span class="label-observed">Measured</span></div>
+    <p class="small muted" style="margin-top:0">First ${half} league matches compared with the latest ${half}. Changes under 8% count as steady.</p>
+    <div class="grid three">${group('up', '▲ Improving', 'up')}${group('down', '▼ Getting worse', 'down')}${group('flat', '● Steady', 'flat')}</div></section>`;
+}
+
+// ---- De Zerbi tracker: by opponent type ----
+function opponentSplitHtml(ms, table) {
+  if (ms.length < 4) return '';
+  const pos = new Map((table.rows || []).map((r) => [r.teamId, r.position]));
+  const opps = ms.map((m) => m.adv.oppPpda).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
+  const med = opps.length ? opps[Math.floor(opps.length / 2)] : null;
+  const avg = (list, get) => { const v = list.map(get).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const stats = (list) => ({ n: list.length, ppg: avg(list, (m) => ({ W: 3, D: 1, L: 0 }[m.result] ?? null)), xg: avg(list, (m) => m.adv.spurs.xg), xga: avg(list, (m) => m.adv.opp.xg), poss: avg(list, (m) => m.adv.spurs.possession), tilt: avg(list, (m) => m.adv.fieldTilt), pass: avg(list, (m) => m.adv.spurs.passPct) });
+  const top = (m) => { const id = teamIdByName(m.opponent); const p = id ? pos.get(id) : null; return p ? p <= 10 : null; };
+  const pairs = [
+    ['Opponent in the top half', 'Opponent in the bottom half', ms.filter((m) => top(m) === true), ms.filter((m) => top(m) === false), 'Current league position of the opponent.'],
+    ['Home', 'Away', ms.filter((m) => m.home), ms.filter((m) => !m.home), ''],
+    ...(med !== null ? [['Opponent pressed high', 'Opponent sat off', ms.filter((m) => m.adv.oppPpda !== null && m.adv.oppPpda <= med), ms.filter((m) => m.adv.oppPpda !== null && m.adv.oppPpda > med), `Split at the median opponent PPDA (${fmtPlain(med, 1)} Spurs passes per opponent defensive action, estimated); lower = pressed harder.`]] : []),
+  ];
+  const cell = (v, dp, unit = '') => (v === null ? '<span class="na">—</span>' : `${fmtPlain(v, dp)}${unit}`);
+  const better = (a, b, lower) => (a === null || b === null || Math.abs(a - b) < 1e-9 ? ['', ''] : (a > b) !== Boolean(lower) ? ['good', ''] : ['', 'good']);
+  const ROWS = [['Points per game', 'ppg', 2], ['xG for', 'xg', 2], ['xG against', 'xga', 2, '', true], ['Possession', 'poss', 0, '%'], ['Field tilt', 'tilt', 0, '%'], ['Pass accuracy', 'pass', 0, '%']];
+  return `<section class="panel section"><div class="section-head"><h2>By opponent type</h2><span class="label-observed">Measured</span></div>
+    ${pairs.map(([la, lb, A, B, note]) => { const sa = stats(A); const sb = stats(B); return `<div class="split"><div class="table-wrap"><table class="split-t"><thead><tr><th></th><th class="r">${esc(la)} <span class="faint">(${sa.n})</span></th><th class="r">${esc(lb)} <span class="faint">(${sb.n})</span></th></tr></thead><tbody>
+      ${ROWS.map(([lab, k, dp, unit, lower]) => { const [ga, gb] = better(sa[k], sb[k], lower); return `<tr><td>${lab}</td><td class="r ${ga}">${cell(sa[k], dp, unit)}</td><td class="r ${gb}">${cell(sb[k], dp, unit)}</td></tr>`; }).join('')}</tbody></table></div>${note ? `<p class="tiny faint">${esc(note)}</p>` : ''}</div>`; }).join('')}
+    <p class="source">League matches with detailed data (${ms.length}). Small samples: one result can swing these, so treat them as signals, not verdicts. Green = the better of the two.</p></section>`;
+}
+
+// ---- De Zerbi tracker: squad use ----
+const ROLE_NAMES = { GK: 'GK', CB: 'CB', LB: 'LB', RB: 'RB', LWB: 'LWB', RWB: 'RWB', DM: 'DM', CM: 'CM', LM: 'LM', RM: 'RM', AM: 'AM', LW: 'LW', RW: 'RW', ST: 'ST' };
+function squadUseHtml(d) {
+  if (!d?.matches?.length) return '';
+  const shapes = {}; for (const m of d.matches) if (m.formation) shapes[m.formation] = (shapes[m.formation] || 0) + 1;
+  const ch = d.matches.map((m) => m.changes).filter((x) => x !== null && x !== undefined);
+  const multi = d.players.filter((p) => Object.keys(p.roles).length > 1);
+  return `<section class="panel section"><div class="section-head"><h2>Squad use under De Zerbi</h2><span class="label-observed">${d.matches.length} matches</span></div>
+    <div class="su-tiles">
+      <div class="rank-tile"><div class="val">${Object.keys(shapes).length || '—'}</div><div class="lbl">Shapes listed</div><div class="ctx">${Object.entries(shapes).sort((a, b) => b[1] - a[1]).map(([f, n]) => `${esc(f)} ×${n}`).join(' · ') || 'no team sheets yet'}</div></div>
+      <div class="rank-tile"><div class="val">${ch.length ? fmtPlain(ch.reduce((a, b) => a + b, 0) / ch.length, 1) : '—'}</div><div class="lbl">Changes per match</div><div class="ctx">to the starting XI · ${ch.join(', ') || '—'}</div></div>
+      <div class="rank-tile"><div class="val">${d.players.length}</div><div class="lbl">Players used</div><div class="ctx">${multi.length} started in more than one role</div></div>
+    </div>
+    <div class="su-strip">${d.matches.map((m) => `<a href="#/match/${encodeURIComponent(m.matchId)}" class="su-m" title="${esc(m.opponent)}">${crestOf(m.opponent, m.opponentTeamId)}<b>${esc(m.formation || '—')}</b><span>${m.changes === null || m.changes === undefined ? '' : `${m.changes} ch.`}</span></a>`).join('')}</div>
+    <div class="table-wrap"><table class="compact-pl su-t"><thead><tr><th class="sticky-col">Player</th><th class="r">Starts</th><th class="r">Sub</th><th>Minutes</th><th>Roles started in</th></tr></thead><tbody>
+      ${d.players.map((p) => `<tr><td class="sticky-col">${p.pos ? `<span class="mg-pos ${esc(p.pos)}">${esc(p.pos)}</span>` : ''}<a href="#/player/${esc(p.playerId)}">${esc(p.name)}</a></td><td class="r">${p.starts}</td><td class="r">${p.subApps || ''}</td><td><div class="su-bar"><i style="width:${Math.min(100, p.minutesShare || 0)}%"></i><span>${p.minutes}′</span></div></td><td class="small">${Object.entries(p.roles).sort((a, b) => b[1] - a[1]).map(([r, n]) => `${ROLE_NAMES[r] || esc(r)}${n > 1 ? ` ×${n}` : ''}`).join(', ') || '<span class="faint">—</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="source">${esc(d.sources.join('; '))}. Roles are read from ESPN's team-sheet positions, so they show where a player was listed to start, not where he played during the match.</p></section>`;
+}
+
+// Mini pitch from team-sheet positions (Spurs attacking upwards).
+function miniPitch(spots, note) {
+  if (!spots?.length) return '';
+  const W = 220; const H = 280;
+  return `<div class="mini-pitch"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Starting positions">
+    <rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="8" class="mp-grass"/><line x1="1" y1="${H / 2}" x2="${W - 1}" y2="${H / 2}" class="mp-line"/><circle cx="${W / 2}" cy="${H / 2}" r="24" class="mp-line" fill="none"/>
+    <rect x="${W / 2 - 50}" y="${H - 44}" width="100" height="43" class="mp-line" fill="none"/><rect x="${W / 2 - 50}" y="1" width="100" height="43" class="mp-line" fill="none"/>
+    ${spots.map((p) => { const x = 14 + (p.x / 100) * (W - 28); const y = H - 14 - (p.y / 100) * (H - 28); return `<g><circle cx="${x}" cy="${y}" r="9" class="mp-dot"/><text x="${x}" y="${y + 3}" text-anchor="middle" class="mp-role">${esc(p.role)}</text><text x="${x}" y="${y + 21}" text-anchor="middle" class="mp-name">${esc(String(p.name).replace(/^[A-Z]\. /, ''))}</text></g>`; }).join('')}
+  </svg>${note ? `<p class="tiny faint">${esc(note)}</p>` : ''}</div>`;
+}
 // Game report: one match at a time, chosen from the crest strip or a chart card.
 function gameReportShell(ms, sel) {
   const pick = ms.find((m) => m.matchId === sel) || ms[ms.length - 1];
@@ -1479,6 +1556,7 @@ function gameReportHtml(m) {
   const su = g.setup;
   const better = (r) => { if (r.spurs === null || r.season === null) return ''; const d = r.spurs - r.season; if (Math.abs(d) < Math.max(Math.abs(r.season) * 0.08, 10 ** -r.dp)) return ''; return (d > 0) !== r.lowerBetter ? 'up' : 'down'; };
   const setup = su ? `<div class="gr-setup">
+      ${miniPitch(su.spots, su.formationNote)}
       <div class="gr-forms"><div><span class="tiny faint">Spurs</span><strong>${esc(su.formation || '—')}</strong></div><div class="faint">v</div><div><span class="tiny faint">${esc(f.opponent)}</span><strong>${esc(su.oppFormation || '—')}</strong></div></div>
       <div class="gr-lines">${su.lines.map((l) => `<div><span class="tiny faint">${esc(l.line)}</span><span>${l.players.map(esc).join(' · ')}</span></div>`).join('')}</div>
       ${su.subs.length ? `<div class="gr-subs"><span class="tiny faint">Substitutions</span>${su.subs.map((x) => `<span>${x.minute ? `<b>${esc(x.minute)}</b> ` : ''}${esc(x.on)}${x.off ? ` <span class="faint">for</span> ${esc(x.off)}` : ''}</span>`).join('')}</div>` : ''}

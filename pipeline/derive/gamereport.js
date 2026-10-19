@@ -3,6 +3,7 @@
 // (FotMob team and player stats via FPL Core Insights, FPL events, ESPN team sheets).
 // Nothing is written that the data does not show; missing figures are left out.
 import { round } from './stats.js';
+import { roleOf, pitchSpots } from './roles.js';
 
 const n2 = (v) => Number(v).toFixed(2);
 const n1 = (v) => Number(v).toFixed(1);
@@ -23,9 +24,12 @@ function setupFrom(sheet, prevSheet, prevOpp) {
   const sides = spursSide(sheet); if (!sides) return null;
   const me = sheet[sides[0]]; const them = sheet[sides[1]];
   const order = ['Goalkeeper', 'Defence', 'Midfield', 'Attack', 'Other'];
-  const xi = me.starters.map((p) => ({ name: p.name, short: p.short || p.name, line: lineOf(p.pos), num: p.num, place: p.place }));
-  xi.sort((a, b) => order.indexOf(a.line) - order.indexOf(b.line) || (a.place ?? 99) - (b.place ?? 99));
-  const lines = order.map((l) => ({ line: l, players: xi.filter((p) => p.line === l).map((p) => p.short) })).filter((l) => l.players.length);
+  const LINE_OF = { GK: 'Goalkeeper', CB: 'Defence', LB: 'Defence', RB: 'Defence', LWB: 'Wing-backs', RWB: 'Wing-backs', DM: 'Midfield', CM: 'Midfield', LM: 'Midfield', RM: 'Midfield', AM: 'Attack', LW: 'Attack', RW: 'Attack', ST: 'Attack' };
+  const order2 = ['Goalkeeper', 'Defence', 'Wing-backs', 'Midfield', 'Attack', 'Other'];
+  const xi = me.starters.map((p) => { const role = roleOf(p.pos, me.formation); return { name: p.name, short: p.short || p.name, role, line: LINE_OF[role] || 'Other', num: p.num, place: p.place }; });
+  xi.sort((a, b) => order2.indexOf(a.line) - order2.indexOf(b.line) || (a.place ?? 99) - (b.place ?? 99));
+  const lines = order2.map((l) => ({ line: l, players: xi.filter((p) => p.line === l).map((p) => `${p.short} (${p.role})`) })).filter((l) => l.players.length);
+  void order;
   // Substitutions with minutes from the key events ("X replaces Y").
   const subs = [];
   for (const e of sheet.keyEvents || []) {
@@ -43,7 +47,7 @@ function setupFrom(sheet, prevSheet, prevOpp) {
     const now = new Set(me.starters.map((p) => surname(p.name)));
     changes = { vs: prevOpp, in: me.starters.filter((p) => !before.has(surname(p.name))).map((p) => p.short || p.name), out: prevSheet[ps[0]].starters.filter((p) => !now.has(surname(p.name))).map((p) => p.short || p.name), formationBefore: prevSheet[ps[0]].formation || null };
   }
-  return { formation: me.formation || null, oppFormation: them.formation || null, lines, subs, cards, changes, source: 'ESPN match feed (team sheets)' };
+  return { formation: me.formation || null, oppFormation: them.formation || null, lines, spots: pitchSpots(me.starters, me.formation), subs, cards, changes, source: 'ESPN match feed (team sheets)', formationNote: 'Formation and positions as listed on ESPN\'s team sheet: the nominal shape, not a measured one.' };
 }
 
 // Average of a metric over Spurs' other league matches this season.

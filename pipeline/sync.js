@@ -23,6 +23,7 @@ import { buildBrief, checkBrief } from './derive/briefing.js';
 import * as espn from './adapters/espn.js';
 import { lineupEffect, teamIdFor } from './derive/lineups.js';
 import { gameReport } from './derive/gamereport.js';
+import { squadUse } from './derive/squaduse.js';
 import { num } from './lib/validate.js';
 import * as af from './adapters/apifootball.js';
 import { ratings, expectedGoals, matchProbabilities, simulateSeason, priorFromElo, absencesFrom, backtest, PRIOR_MATCHES } from './derive/simulate.js';
@@ -541,6 +542,7 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
       if (sheet) { prevSheet = sheet; prevOpp = f.opponent; }
     }
     if (fetched) ok('espn', espn.label, { records: { teamSheetsFetched: fetched, reports } });
+    built.files['dezerbi.json'] = { season, generatedAt: nowIso, ...squadUse({ fixtures: built.fixtures, files: built.files, players: built.players, sheetOf, coachFor, leagues: espn.LEAGUES }) };
   } catch (err) { log.error('game reports failed', { error: String(err.message || err) }); }
 
   // ---------------- Write (with no-partial-overwrite protection) ----------------
