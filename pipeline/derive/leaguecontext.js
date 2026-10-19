@@ -122,3 +122,30 @@ export function roundContext({ table, fplFixtures, spursId, teams, now = new Dat
     label: 'Calculated from points only: goal difference and later results can change the picture. Analysis, not official.',
   };
 }
+
+// "Deserved" table: every club's expected points from the chances in each of its league
+// matches (FotMob xG for both sides, Poisson goals). Real and expected points use the same
+// set of matches, so the gap between them is a fair luck measure.
+import { matchProbabilities } from './simulate.js';
+export function deservedTable(leagueMatches, teams, table) {
+  const byCode = new Map(teams.map((t) => [Number(t.code), t]));
+  const realPos = new Map(table.map((r) => [r.teamId, r.position]));
+  const rows = new Map();
+  const seen = new Set();
+  for (const m of leagueMatches) {
+    if (seen.has(m.match_id)) continue; seen.add(m.match_id);
+    const hx = num(m.home_expected_goals_xg); const ax = num(m.away_expected_goals_xg); const hs = num(m.home_score); const as = num(m.away_score);
+    const h = byCode.get(num(m.home_team)); const a = byCode.get(num(m.away_team));
+    if (!h || !a || hx === null || ax === null || hs === null || as === null) continue;
+    const p = matchProbabilities(Math.max(hx, 0.01), Math.max(ax, 0.01));
+    for (const [t, xgF, xgA, gf, ga, xp] of [[h, hx, ax, hs, as, 3 * p.home + p.draw], [a, ax, hx, as, hs, 3 * p.away + p.draw]]) {
+      const r = rows.get(t.id) || { teamId: t.id, team: t.name, short: t.short, played: 0, points: 0, xPts: 0, gf: 0, ga: 0, xgF: 0, xgA: 0 };
+      r.played++; r.points += gf > ga ? 3 : gf === ga ? 1 : 0; r.xPts += xp; r.gf += gf; r.ga += ga; r.xgF += xgF; r.xgA += xgA;
+      rows.set(t.id, r);
+    }
+  }
+  const list = [...rows.values()].map((r) => ({ ...r, xPts: Math.round(r.xPts * 10) / 10, xgF: Math.round(r.xgF * 100) / 100, xgA: Math.round(r.xgA * 100) / 100, xgd: Math.round((r.xgF - r.xgA) * 100) / 100, luck: Math.round((r.points - r.xPts) * 10) / 10, realPosition: realPos.get(r.teamId) ?? null }))
+    .sort((x, y) => y.xPts - x.xPts || y.xgd - x.xgd);
+  list.forEach((r, i) => { r.position = i + 1; });
+  return { rows: list, matches: seen.size, source: 'Match xG from FotMob via FPL Core Insights; expected points = chance of winning × 3 + chance of drawing, from each match\'s xG.' };
+}

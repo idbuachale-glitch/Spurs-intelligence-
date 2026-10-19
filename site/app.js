@@ -2,10 +2,12 @@ import { state, load, loadSeason, esc, fmt, fmtPlain, fmtDate, fmtTime, fmtDateT
 import { lineChart, pairBars, shotMap, barList, xgRace, momentumChart, shotZonePitch, conceptPitch, radar } from './charts.js';
 import { answer, renderAnswer, suggestions } from './analyst.js';
 import { managerView, managerAfter } from './manager.js';
+import { replayHtml, bindReplay } from './replay.js';
+import { shareButtonHtml, bindShare } from './share.js';
 
 const NAV = [
   ['overview', 'Overview', 'i-home'], ['fixtures', 'Fixtures & results', 'i-cal'], ['players', 'Player Lab', 'i-user'], ['team', 'Team statistics', 'i-chart'],
-  ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['injuries', 'Injury tracker', 'i-medic'], ['table', 'League table', 'i-table'],
+  ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['injuries', 'Injury tracker', 'i-medic'], ['weekly', 'Weekly report', 'i-doc'], ['table', 'League table', 'i-table'],
   ['breakdown', 'Match breakdown', 'i-spark'], ['simulator', 'Season simulator', 'i-dice'], ['manager', 'Matchday Simulator', 'i-whistle'], ['style', 'De Zerbi tracker', 'i-trend'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
 ];
 const BOTTOM = ['overview', 'breakdown', 'players', 'fixtures'];
@@ -723,19 +725,45 @@ AFTER.squad = async () => {
 };
 
 // ---------------- League table ----------------
+AFTER.table = () => {
+  document.getElementById('tbl-toggle')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-t]'); if (!b) return;
+    document.querySelectorAll('#tbl-toggle button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    document.getElementById('tbl-real').hidden = b.dataset.t !== 'real'; document.getElementById('tbl-deserved').hidden = b.dataset.t !== 'deserved';
+  });
+};
 VIEWS.table = async () => {
   const t = await loadSeason('table.json');
   const v = t.verification || {};
   return `<div class="section-head"><h1>Premier League table</h1><span class="muted small">${esc(state.season.replace('-', '/'))}</span></div>
+  ${t.deserved?.rows?.length ? `<div class="seg tbl-toggle" id="tbl-toggle"><button data-t="real" aria-pressed="true">Real table</button><button data-t="deserved" aria-pressed="false">Deserved table</button></div>` : ''}
+  <div id="tbl-deserved" hidden>${deservedHtml(t.deserved, t.spurs?.teamId)}</div>
+  <div id="tbl-real">
   <div class="panel" style="padding:6px"><div class="table-wrap"><table><thead><tr><th class="r">#</th><th>Club</th><th class="r">P</th><th class="r">W</th><th class="r">D</th><th class="r">L</th><th class="r hide-xs">GF</th><th class="r hide-xs">GA</th><th class="r">GD</th><th class="r">Pts</th><th>Form</th></tr></thead><tbody>
   ${t.rows.map((r) => `<tr class="${r.teamId === t.spurs?.teamId ? 'hl' : ''}"><td class="r">${r.position}</td><td>${crest(r.teamId)}<span class="cl-l">${esc(r.team)}</span><span class="cl-s">${esc(r.short || r.team)}</span></td><td class="r">${r.played}</td><td class="r">${r.won}</td><td class="r">${r.drawn}</td><td class="r">${r.lost}</td><td class="r hide-xs">${r.gf}</td><td class="r hide-xs">${r.ga}</td><td class="r">${r.gd > 0 ? '+' : ''}${r.gd}</td><td class="r"><strong>${r.points}</strong></td><td><span class="form-strip">${r.form.map((x) => resultChip(x, true)).join('')}</span></td></tr>`).join('')}</tbody></table></div></div>
   <p class="source">${esc(t.source)}, ordered by points, goal difference, goals scored, then head-to-head. Includes provisionally finished matches. Retrieved ${esc(fmtDateTime(t.generatedAt))}.
   ${v.fplOfficialPosition ? ` Cross-check with the Premier League's published position: ${v.fplOfficialPosition.agrees ? 'matches' : `differs (official ${v.fplOfficialPosition.position})`}.` : ''}
-  ${v.footballData ? ` football-data.org check: ${v.footballData.agrees ? 'matches' : 'differs'} (${esc(fmtDateTime(v.footballData.retrievedAt))}).` : ''}</p>
+  ${v.footballData ? ` football-data.org check: ${v.footballData.agrees ? 'matches' : 'differs'} (${esc(fmtDateTime(v.footballData.retrievedAt))}).` : ''}</p></div>
   ${leadersPanel(t.leaders)}
   ${xgLeadersPanel(t.leaders)}
   ${roundPanel(t.round)}`;
 };
+// Table re-ranked by expected points from each match's chances, with a luck meter.
+function deservedHtml(d, spursId) {
+  if (!d?.rows?.length) return '';
+  const maxLuck = Math.max(1, ...d.rows.map((r) => Math.abs(r.luck)));
+  const sp = d.rows.find((r) => r.teamId === spursId);
+  const luckBar = (l) => `<div class="luck"><div class="luck-mid"></div><div class="luck-fill ${l >= 0 ? 'pos' : 'neg'}" style="${l >= 0 ? 'left:50%' : `right:50%`};width:${(Math.abs(l) / maxLuck) * 50}%"></div></div>`;
+  const move = (r) => { if (!r.realPosition) return ''; const d2 = r.realPosition - r.position; return d2 === 0 ? '<span class="faint">=</span>' : `<span class="${d2 > 0 ? 'mv-up' : 'mv-down'}">${d2 > 0 ? '▲' : '▼'}${Math.abs(d2)}</span>`; };
+  const story = sp ? `Spurs are <strong>${ordinal(sp.realPosition)}</strong> on points but <strong>${ordinal(sp.position)}</strong> on performance: ${fmtPlain(sp.xPts, 1)} expected points from their chances against ${sp.points} real points (${sp.luck >= 0 ? '+' : ''}${fmtPlain(sp.luck, 1)}). ${sp.luck <= -2 ? 'Results have been worse than the football.' : sp.luck >= 2 ? 'Results have been kinder than the football.' : 'Results are close to what the chances deserved.'}` : '';
+  const lucky = d.rows.slice().sort((a, b) => b.luck - a.luck)[0]; const unlucky = d.rows.slice().sort((a, b) => a.luck - b.luck)[0];
+  return `${story ? `<div class="panel section"><p style="margin:0">${story}</p><p class="small muted" style="margin:6px 0 0">Luckiest: ${crest(lucky.teamId)}${esc(lucky.team)} (+${fmtPlain(lucky.luck, 1)} pts) · Unluckiest: ${crest(unlucky.teamId)}${esc(unlucky.team)} (${fmtPlain(unlucky.luck, 1)} pts)</p></div>` : ''}
+  <div class="panel" style="padding:6px"><div class="table-wrap"><table class="deserved"><thead><tr><th class="r">#</th><th>Club</th><th class="r">xPts</th><th class="r">Pts</th><th class="r hide-xs">xG±</th><th>Luck</th><th class="r">Real</th></tr></thead><tbody>
+  ${d.rows.map((r) => `<tr class="${r.teamId === spursId ? 'hl' : ''}"><td class="r">${r.position}</td><td>${crest(r.teamId)}<span class="cl-l">${esc(r.team)}</span><span class="cl-s">${esc(r.short)}</span></td><td class="r"><strong>${fmtPlain(r.xPts, 1)}</strong></td><td class="r">${r.points}</td><td class="r hide-xs">${r.xgd > 0 ? '+' : ''}${fmtPlain(r.xgd, 1)}</td><td>${luckBar(r.luck)}<span class="tiny ${r.luck >= 0 ? 'mv-up' : 'mv-down'}">${r.luck > 0 ? '+' : ''}${fmtPlain(r.luck, 1)}</span></td><td class="r">${r.realPosition ?? '—'} ${move(r)}</td></tr>`).join('')}
+  </tbody></table></div></div>
+  <p class="source">Ranked by expected points (xPts): for every league match, the chance of winning × 3 plus the chance of drawing, worked out from both teams' xG. Luck = real points − xPts over the same ${d.matches} matches; green = more points than the chances deserved. Real = position in the real table (▲ means the real table has them higher). ${esc(d.source)}</p>`;
+}
+
 // League-wide xG and xA rankings (FPL/Opta), with per-90 context.
 function xgLeadersPanel(L) {
   if (!L || (!L.xg && !L.xa)) return '';
@@ -795,6 +823,7 @@ VIEWS.match = async (id) => {
   return `<section class="hero"><div class="kicker">${esc(f.competition)}${f.gameweek ? `, gameweek ${f.gameweek}` : ''} · ${esc(statusText[f.status] || f.status)}${f.resultNote ? ` · ${esc(f.resultNote)}` : ''}</div>
     <div class="fixture-board"><div class="team">${f.home ? spursCrest('big') : oc(f, 'big')}${esc(L)}</div><div class="mid"><div class="clock">${sc}</div><div class="vs">${esc(fmtDate(f.kickoff, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}, ${esc(fmtTime(f.kickoff))} Bahrain</div></div><div class="team right">${f.home ? oc(f, 'big') : spursCrest('big')}${esc(R)}</div></div>
     <div class="hero-meta"><span>${f.home ? 'Home' : 'Away'}${f.venueName ? ` · ${esc(f.venueName)}` : ''}</span>${f.kickoffHistory?.length ? `<span>Rescheduled (was ${esc(fmtDateTime(f.kickoffHistory[f.kickoffHistory.length - 1].was))})</span>` : ''}${f.verification ? `<span>Score ${f.verification.agrees ? 'confirmed' : 'differs'} by ${esc(f.verification.source)}</span>` : ''}</div></section>
+    ${shareButtonHtml(m)}
   ${livePanel(m)}
   ${m.preview ? scoutHtml(m.preview, f) : ''}
   <div class="grid two section" ${f.score ? '' : 'hidden'}>
@@ -815,6 +844,7 @@ VIEWS.match = async (id) => {
   ${d?.fotmobUrl ? `<div class="banner info section">Player heat maps, average positions and pass maps for this match are not in the free data. FotMob shows them on its own match page: <a href="${esc(d.fotmobUrl)}" target="_blank" rel="noopener">open this match on FotMob</a>.</div>` : ''}
   ${d && (d.xgRace?.length || d.momentum?.length) ? `<div class="grid two section"><div class="panel"><h2>xG race</h2>${xgRace(d.xgRace, { opp: f.opponent })}<p class="source">Cumulative xG by minute (FotMob).</p></div><div class="panel"><h2>Momentum</h2>${momentumChart(d.momentum, { opp: f.opponent })}<p class="source">FotMob attacking-momentum index per minute.</p></div></div>` : ''}
   ${d?.shots?.length ? `<div class="grid two section"><div class="panel"><h2>${spursCrest()}Spurs shots</h2>${shotMap(d.shots.filter((s) => s.team === 'spurs'), { matchXg: m.team?.adv?.spurs?.xg })}</div><div class="panel"><h2>${oc(f)}${esc(f.opponent)} shots</h2>${shotMap(d.shots.filter((s) => s.team === 'opp'), { matchXg: m.team?.adv?.opp?.xg })}</div></div>` : ''}
+  ${replayHtml(m)}
   <div class="panel section" ${f.score || m.lineup.length ? '' : 'hidden'}><div class="section-head"><h2>Spurs players</h2>${m.lineup.length ? `<div class="tabs" role="group" aria-label="Statistic group">${Object.keys(MATCH_TABS).map((t, i) => `<button data-mtab="${t}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>` : ''}</div>
     <div id="m-lineup">${m.lineup.length ? lineupTable(m.lineup, 'Attacking') : '<p class="na">Player statistics are not available for this match yet.</p>'}</div>
     ${m.statsComplete === false && f.status !== 'SCHEDULED' ? '<p class="small" style="color:var(--warn)">Statistics may still be incomplete; the site re-checks automatically after each match.</p>' : ''}</div>
@@ -838,6 +868,7 @@ AFTER.match = async (id) => {
   clearTimeout(window.__liveT);
   if (!id) return;
   const m = await loadSeason(`matches/${id}.json`, state.season, { optional: true });
+  if (m) { bindReplay(m); bindShare(m); }
   // During a match, reload this page's data every minute (the site itself updates about every 5).
   if (m && inLiveWindow(m.fixture)) {
     const hash = location.hash;
@@ -1070,6 +1101,33 @@ VIEWS.injuries = async () => {
     ${out.length ? `<section class="panel section"><h2 style="margin-top:0">Next ${cols.length} matches</h2>${grid}</section><div class="grid two section">${cards}</div>` : '<div class="empty">Everyone is available. No injuries or suspensions are listed.</div>'}
     <p class="source">From the Premier League's official availability flags and news (via the FPL API), checked every 20 minutes. Return dates are the club's estimates and often move; matches are counted as missed when they fall before the expected return date. Cup suspensions may not be listed.</p>`;
 };
+
+// ---------------- Weekly report ----------------
+VIEWS.weekly = async (key) => {
+  const [wk, ps] = await Promise.all([loadSeason('weekly.json', state.season, { optional: true }), loadSeason('players.json')]);
+  if (!wk?.weeks?.length) return '<h1>Weekly report</h1><div class="empty">The first weekly report appears after the next data update.</div>';
+  const w = wk.weeks.find((x) => x.key === key) || wk.weeks.find((x) => !x.current) || wk.weeks[0];
+  const range = `${fmtDate(w.start, { day: 'numeric', month: 'short' })} – ${fmtDate(w.end, { day: 'numeric', month: 'short' })}`;
+  const pById = new Map(ps.players.map((p) => [p.id, p]));
+  const t = w.table || {};
+  const mv = t.before && t.after && t.after.played > t.before.played ? t.before.position - t.after.position : null;
+  const resRow = (f) => `<a class="fx" href="#/match/${encodeURIComponent(f.id)}"><div class="when">${esc(fmtDate(f.kickoff))}<br><span class="faint">${esc(fmtTime(f.kickoff))}</span></div>
+    <div><div class="who">${oc(f)}${f.home ? '' : '@ '}${esc(f.opponent)}${f.home ? ' (H)' : ''}</div><div class="comp">${esc(f.competition)}</div></div>
+    <div class="scorebox">${f.score ? `${f.score.spurs}–${f.score.opp} ${resultChip(f.result, true)}` : f.difficulty ? `<span class="diff ${f.difficulty.level}"></span><span class="diff-pct">${f.difficulty.win}%</span>` : ''}</div></a>`;
+  return `<div class="section-head"><h1>Weekly report</h1><select class="ctl" id="wk-sel" aria-label="Week">${wk.weeks.map((x) => `<option value="${x.key}" ${x.key === w.key ? 'selected' : ''}>${esc(fmtDate(x.start, { day: 'numeric', month: 'short' }))} – ${esc(fmtDate(x.end, { day: 'numeric', month: 'short' }))}${x.current ? ' (this week so far)' : ''}</option>`).join('')}</select></div>
+    <section class="panel weekly-lead"><div class="kicker small muted">${w.current ? 'This week so far' : 'Week of'} ${esc(range)}</div><p class="weekly-summary">${esc(w.summary)}</p></section>
+    <div class="grid three section">
+      <div class="panel stat-tile"><span class="lbl">Results</span><span class="big">${w.record.played ? `${w.record.w}W ${w.record.d}D ${w.record.l}L` : '—'}</span><span class="small muted">${w.record.played ? `Goals ${w.record.gf}–${w.record.ga}` : 'No match played'}</span></div>
+      <div class="panel stat-tile"><span class="lbl">League position</span><span class="big">${t.after ? ordinal(t.after.position) : '—'}</span><span class="small muted">${mv === null ? (t.after ? `${t.after.points} pts` : '') : mv > 0 ? `<span class="mv-up">▲ ${mv}</span> from ${ordinal(t.before.position)}` : mv < 0 ? `<span class="mv-down">▼ ${-mv}</span> from ${ordinal(t.before.position)}` : 'No change'}${t.after ? ` · ${t.after.points} pts` : ''}</span></div>
+      <div class="panel stat-tile"><span class="lbl">Next week</span><span class="big">${w.next.length || '—'}</span><span class="small muted">${w.next.length ? `match${w.next.length > 1 ? 'es' : ''}` : 'No fixtures'}</span></div>
+    </div>
+    ${w.results.length ? `<section class="section"><h2>Results</h2><div class="panel" style="padding:0">${w.results.map(resRow).join('')}</div></section>` : ''}
+    ${w.stars.length ? `<section class="section"><h2>Standout performers</h2><div class="grid three">${w.stars.map((x, i) => { const p = pById.get(x.playerId); return `<a class="panel wk-star" href="#/player/${x.playerId}"><span class="wk-rank">${i + 1}</span>${p ? photoHtml(p) : ''}<div><strong>${esc(x.name)}</strong><div class="small muted">${esc(x.line)}</div><div class="tiny faint">${x.minutes} min · ${x.matches} match${x.matches > 1 ? 'es' : ''}</div></div></a>`; }).join('')}</div></section>` : ''}
+    ${w.teamNews?.length ? `<section class="section"><div class="section-head"><h2>Team news</h2><a class="small" href="#/injuries">Injury tracker →</a></div><div class="panel"><div class="statlist">${w.teamNews.map((n) => `<div class="statrow"><span><strong>${esc(n.name)}</strong>${n.newThisWeek ? ' <span class="mg-doubt">new</span>' : ''} <span class="small muted">${esc(n.news || '')}</span></span><span class="v">${n.status === 'd' ? `${n.chance ?? '?'}%` : n.status === 's' ? 'Suspended' : 'Out'}</span></div>`).join('')}</div></div></section>` : ''}
+    ${w.next.length ? `<section class="section"><h2>Coming up</h2><div class="panel" style="padding:0">${w.next.map(resRow).join('')}</div></section>` : ''}
+    <p class="source">${esc(wk.label)} Standouts are ranked by goals, assists, xG and xA, and the Premier League's bonus-points score, with saves and defensive actions counted for keepers and defenders.</p>`;
+};
+AFTER.weekly = () => { document.getElementById('wk-sel')?.addEventListener('change', (e) => { location.hash = `#/weekly/${e.target.value}`; }); };
 
 VIEWS.manager = managerView;
 AFTER.manager = managerAfter;

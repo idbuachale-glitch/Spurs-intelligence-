@@ -17,8 +17,9 @@ import { buildSeason } from './derive/build.js';
 import { fotmobPool, strengthsProfile, proxyPanel } from './derive/profile.js';
 import { setMinMinutes, minMinutes, leaguePool, leagueTeamRanks, insights, tactical, squadPlanner, positionRanks, playerPercentiles, scoutingSummary, article, coachFor } from './derive/analysis.js';
 import { STATS, RATES, UNAVAILABLE, NOW_AVAILABLE, POS_LABEL } from './derive/stats.js';
-import { leaders, roundContext } from './derive/leaguecontext.js';
+import { leaders, roundContext, deservedTable } from './derive/leaguecontext.js';
 import { runLive, attachStoredLive } from './derive/live.js';
+import { weeklyReports } from './derive/weekly.js';
 import * as af from './adapters/apifootball.js';
 import { ratings, expectedGoals, matchProbabilities, simulateSeason } from './derive/simulate.js';
 
@@ -274,6 +275,7 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
   };
   try {
     built.files['table.json'].leaders = { source: 'FPL API season totals (all clubs)', ...leaders(boot.elements, teams) };
+    built.files['table.json'].deserved = deservedTable(detail.leagueMatches || [], teams, built.table);
     built.files['table.json'].round = roundContext({ table: built.table, fplFixtures: fixtures.fixtures, spursId, teams, now });
   } catch (err) { log.error('table context failed', { error: String(err.message || err) }); }
 
@@ -367,6 +369,10 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     };
     ok('simulator', 'Season simulator', { records: { remainingFixtures: sim.remainingFixtures } });
   } catch (err) { fail('simulator', 'Season simulator', err); }
+
+  // ---------------- Weekly report ----------------
+  try { built.files['weekly.json'] = { season, generatedAt: nowIso, ...weeklyReports({ fixtures: built.fixtures, files: built.files, fplFixtures: fixtures.fixtures, teams, spursId, players: built.players, now }) }; }
+  catch (err) { log.error('weekly report failed', { error: String(err.message || err) }); }
 
   // ---------------- Badges for opponents outside the Premier League ----------------
   const badgeFile = S('badges.json');
