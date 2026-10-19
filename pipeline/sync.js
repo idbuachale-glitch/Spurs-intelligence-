@@ -22,6 +22,7 @@ import { runLive, attachStoredLive } from './derive/live.js';
 import { weeklyReports } from './derive/weekly.js';
 import * as espn from './adapters/espn.js';
 import { lineupEffect, teamIdFor } from './derive/lineups.js';
+import { num } from './lib/validate.js';
 import * as af from './adapters/apifootball.js';
 import { ratings, expectedGoals, matchProbabilities, simulateSeason, priorFromElo, absencesFrom, backtest, PRIOR_MATCHES } from './derive/simulate.js';
 
