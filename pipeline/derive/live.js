@@ -35,7 +35,8 @@ export async function runLive({ built, stateDir, now, spursElementIds, elementsB
   const snap = fx ? readJson(snapFile, { matchId: fx.id }) : null;
   const notes = [];
 
-  if (fx && !snap.final) {
+  // Keep refreshing until the window closes, so post-full-time corrections are picked up too.
+  if (fx) {
     // ---- ESPN: score, clock, goals/cards/subs, team and player stats (free, no key) ----
     const league = espn.LEAGUES[fx.competition];
     if (league && espn.enabled() && (now - new Date(fx.kickoff)) / 60000 >= -2) {
@@ -60,7 +61,8 @@ export async function runLive({ built, stateDir, now, spursElementIds, elementsB
           });
           const cm = mins(lv.clock);
           snap.espn = { retrievedAt: now.toISOString(), state: lv.state, detail: lv.detail, statNames: lv.statNames,
-            players: (lv.players[me] || []).map((p) => ({ name: p.name, short: p.short, pos: p.pos, starter: p.starter, subbedIn: p.subbedIn, subbedOut: p.subbedOut, stats: p.stats })) };
+            players: (lv.players[me] || []).map((p) => ({ name: p.name, short: p.short, pos: p.pos, starter: p.starter, subbedIn: p.subbedIn, subbedOut: p.subbedOut, stats: p.stats })),
+            oppPlayers: (lv.players[them] || []).map((p) => ({ name: p.name, short: p.short, pos: p.pos, starter: p.starter, stats: p.stats })) };
           if (lv.state === 'in' || lv.state === 'post') {
             const sc = { spurs: lv.sides[me]?.score ?? null, opp: lv.sides[them]?.score ?? null };
             if (sc.spurs !== null) snap.score = sc;
@@ -114,7 +116,7 @@ export async function runLive({ built, stateDir, now, spursElementIds, elementsB
         const toRow = (e) => {
           const s = e.stats; const el = elementsById.get(e.id);
           return { elementId: e.id, name: el ? el.web_name : String(e.id), pos: ['GK', 'DEF', 'MID', 'FWD'][Number(el?.element_type) - 1] || null, starts: s.starts ?? null, minutes: s.minutes, goals: s.goals_scored, assists: s.assists, yc: s.yellow_cards, rc: s.red_cards, saves: s.saves,
-            tackles: s.tackles ?? null, cbi: s.clearances_blocks_interceptions ?? null, recoveries: s.recoveries ?? null, bps: s.bps, xg: s.expected_goals !== undefined ? Number(s.expected_goals) : null };
+            tackles: s.tackles ?? null, cbi: s.clearances_blocks_interceptions ?? null, recoveries: s.recoveries ?? null, bps: s.bps, xg: s.expected_goals !== undefined ? Number(s.expected_goals) : null, xa: s.expected_assists !== undefined ? Number(s.expected_assists) : null };
         };
         // Starters first, then substitutes; within each, goalkeeper → defenders → midfielders → forwards.
         const PO = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
@@ -122,6 +124,15 @@ export async function runLive({ built, stateDir, now, spursElementIds, elementsB
         const played = els.filter((e) => (e.stats?.minutes || 0) > 0);
         const players = played.filter((e) => spursElementIds.has(e.id)).map(toRow).sort(order);
         const oppPlayers = played.filter(isOpp).map(toRow).sort(order);
+        // Add ESPN's per-player shooting figures (matched by name) to the FPL rows.
+        const nm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').trim();
+        const addEspn = (rows, list) => { for (const r of rows) {
+          const w = nm(r.name); const last = w.split(' ').slice(-1)[0];
+          const e = (list || []).find((x) => nm(x.name) === w || nm(x.name).endsWith(` ${w}`) || nm(x.short).endsWith(` ${last}`) && nm(x.name).endsWith(` ${last}`));
+          if (!e) continue; const st = e.stats || {}; const n = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+          r.shots = n(st.totalShots); r.sot = n(st.shotsOnTarget); r.fouled = n(st.foulsSuffered); r.offsides = n(st.offsides);
+        } };
+        addEspn(players, snap.espn?.players); addEspn(oppPlayers, snap.espn?.oppPlayers);
         if (players.length) { snap.players = players; snap.playersAt = now.toISOString(); }
         if (oppPlayers.length) snap.oppPlayers = oppPlayers;
       } catch (err) { notes.push(`FPL live: ${err.message}`); }

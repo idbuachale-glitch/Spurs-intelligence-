@@ -946,7 +946,8 @@ function lineupTable(lineup, tab) {
 AFTER.match = async (id) => {
   clearTimeout(window.__liveT);
   id = id || decodeURIComponent(location.hash.split('/')[2] || '');
-  if (window.__ltSide === 'opp') document.querySelector('[data-lt="opp"]')?.click(); // keep the chosen team across the live refresh
+  if (window.__ltSide === 'opp') document.querySelector('[data-lt="opp"]')?.click();
+  if (window.__lvView === 'defence') document.querySelector('[data-lv="defence"]')?.click(); // keep the chosen team across the live refresh
   if (!id) return;
   const m = await loadSeason(`matches/${id}.json`, state.season, { optional: true });
   if (m) { bindReplay(m); bindShare(m); }
@@ -970,6 +971,8 @@ const inLiveWindow = (f) => { if (!f?.kickoff || f.friendly) return false; const
 // Live in-game statistics (API-Football) and per-player figures (FPL live).
 // Goals, cards and substitutions in minute order (live feed).
 if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
+  const v = e.target.closest?.('[data-lv]');
+  if (v) { const box = v.closest('.live-teams'); window.__lvView = v.dataset.lv; box.querySelectorAll('[data-lv]').forEach((x) => x.setAttribute('aria-pressed', x === v)); box.querySelectorAll('[data-lvp]').forEach((x) => { x.hidden = x.dataset.lvp !== v.dataset.lv; }); return; }
   const b = e.target.closest?.('[data-lt]'); if (!b) return;
   const box = b.closest('.live-teams'); window.__ltSide = b.dataset.lt;
   box.querySelectorAll('[data-lt]').forEach((x) => x.setAttribute('aria-pressed', x === b));
@@ -1012,9 +1015,14 @@ function livePanel(m) {
   ], { right: f.opponent }) : `<p class="small muted">${lv.planBlocked ? 'Team statistics are not available on the free API-Football plan for this match.' : 'Team statistics are waiting for the first update from the provider.'}</p>`;
   const evHtml = liveTimeline(lv, f);
   const pl = lv.players || []; const op = lv.oppPlayers || [];
-  const table = (rows) => `<div class="table-wrap"><table class="live-pl"><thead><tr><th>Player</th><th class="r">Min</th><th class="r">G</th><th class="r">A</th><th class="r">Tkl</th><th class="r">CBI</th><th class="r">Rec</th></tr></thead><tbody>${sortLive(rows).map((p, i, a) => `<tr${i && a[i - 1].starts === 1 && p.starts === 0 ? ' class="lp-subs"' : ''}><td>${p.pos ? `<span class="mg-pos ${esc(p.pos)}">${esc(p.pos)}</span>` : ''}${esc(p.name)}${p.yc ? ' 🟨' : ''}${p.rc ? ' 🟥' : ''}</td><td class="r">${p.minutes}</td><td class="r">${p.goals || ''}</td><td class="r">${p.assists || ''}</td><td class="r">${fmt(p.tackles)}</td><td class="r">${fmt(p.cbi)}</td><td class="r">${fmt(p.recoveries)}</td></tr>`).join('')}</tbody></table></div>`;
+  // Two views: attacking figures for the forwards and creators, defensive ones for the back line.
+  const LIVE_COLS = { attack: [['shots', 'Shots'], ['sot', 'On tgt'], ['xg', 'xG', 2], ['xa', 'xA', 2]], defence: [['tackles', 'Tkl'], ['cbi', 'CBI'], ['recoveries', 'Rec'], ['saves', 'Saves']] };
+  const table = (rows, view) => { const cols = LIVE_COLS[view].filter(([k]) => rows.some((p) => p[k] !== null && p[k] !== undefined && (k !== 'saves' || p.pos === 'GK')));
+    return `<div class="table-wrap"><table class="live-pl"><thead><tr><th>Player</th><th class="r">Min</th><th class="r">G</th><th class="r">A</th>${cols.map(([, l]) => `<th class="r">${l}</th>`).join('')}</tr></thead><tbody>${sortLive(rows).map((p, i, a) => `<tr${i && a[i - 1].starts === 1 && p.starts === 0 ? ' class="lp-subs"' : ''}><td>${p.pos ? `<span class="mg-pos ${esc(p.pos)}">${esc(p.pos)}</span>` : ''}${esc(p.name)}${p.yc ? ' 🟨' : ''}${p.rc ? ' 🟥' : ''}</td><td class="r">${p.minutes}</td><td class="r">${p.goals || ''}</td><td class="r">${p.assists || ''}</td>${cols.map(([k, , dp]) => `<td class="r">${k === 'saves' && p.pos !== 'GK' ? '' : fmt(p[k], dp || 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`; };
   const plHtml = pl.length || op.length ? `<div class="live-teams" style="margin-top:14px"><div class="seg lt-seg" role="tablist">${pl.length ? `<button data-lt="spurs" aria-pressed="true">${spursCrest()}Spurs</button>` : ''}${op.length ? `<button data-lt="opp" aria-pressed="${pl.length ? 'false' : 'true'}">${oc(f)}${esc(f.opponent)}</button>` : ''}</div>
-    <div data-ltp="spurs"${pl.length ? '' : ' hidden'}>${table(pl)}</div><div data-ltp="opp"${pl.length ? ' hidden' : ''}>${table(op)}</div></div><p class="tiny faint" style="margin:4px 0 0">G goals · A assists · Tkl tackles · CBI clearances, blocks &amp; interceptions · Rec recoveries.</p>` : '';
+    <div class="seg lv-seg" role="tablist" style="margin-top:8px"><button data-lv="attack" aria-pressed="true">Attacking</button><button data-lv="defence" aria-pressed="false">Defending</button></div>
+    ${['spurs', 'opp'].map((side) => `<div data-ltp="${side}"${(side === 'spurs') === Boolean(pl.length) ? '' : ' hidden'}>${['attack', 'defence'].map((v) => `<div data-lvp="${v}"${v === 'attack' ? '' : ' hidden'}>${table(side === 'spurs' ? pl : op, v)}</div>`).join('')}</div>`).join('')}</div>
+    <p class="tiny faint" style="margin:4px 0 0">G goals · A assists · On tgt shots on target · xG/xA expected goals/assists · Tkl tackles · CBI clearances, blocks &amp; interceptions · Rec recoveries.</p>` : '';
   return `<section class="panel section live-panel">${head}${bars}${evHtml}${plHtml}
     <p class="source">${st ? `Team stats: ${esc(lv.source.stats)}` : ''}${st && pl.length ? '; ' : ''}${pl.length ? `players: ${esc(lv.source.players)}` : ''}. Last update ${esc(fmtTime(lv.retrievedAt || lv.playersAt))} Bahrain${lv.isLive ? ' · the site updates about every 5 minutes during the match and this page reloads itself every minute' : ''}.</p></section>`;
 }
