@@ -915,7 +915,7 @@ VIEWS.match = async (id) => {
   ${d && (d.xgRace?.length || d.momentum?.length) ? `<div class="grid two section"><div class="panel"><h2>xG race</h2>${xgRace(d.xgRace, { opp: f.opponent })}<p class="source">Cumulative xG by minute (FotMob).</p></div><div class="panel"><h2>Momentum</h2>${momentumChart(d.momentum, { opp: f.opponent })}<p class="source">FotMob attacking-momentum index per minute.</p></div></div>` : ''}
   ${d?.shots?.length ? `<div class="grid two section"><div class="panel"><h2>${spursCrest()}Spurs shots</h2>${shotMap(d.shots.filter((s) => s.team === 'spurs'), { matchXg: m.team?.adv?.spurs?.xg })}</div><div class="panel"><h2>${oc(f)}${esc(f.opponent)} shots</h2>${shotMap(d.shots.filter((s) => s.team === 'opp'), { matchXg: m.team?.adv?.opp?.xg })}</div></div>` : ''}
   ${replayHtml(m)}
-  <div class="panel section" ${f.score || m.lineup.length ? '' : 'hidden'}><div class="section-head"><h2>Spurs players</h2>${m.lineup.length ? `<div class="tabs" role="group" aria-label="Statistic group">${Object.keys(MATCH_TABS).map((t, i) => `<button data-mtab="${t}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>` : ''}</div>
+  <div class="panel section" ${(f.score || m.lineup.length) && !m.live?.isLive ? '' : 'hidden'}><div class="section-head"><h2>Spurs players</h2>${m.lineup.length ? `<div class="tabs" role="group" aria-label="Statistic group">${Object.keys(MATCH_TABS).map((t, i) => `<button data-mtab="${t}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>` : ''}</div>
     <div id="m-lineup">${m.lineup.length ? lineupTable(m.lineup, 'Attacking') : '<p class="na">Player statistics are not available for this match yet.</p>'}</div>
     ${m.statsComplete === false && f.status !== 'SCHEDULED' ? '<p class="small" style="color:var(--warn)">Statistics may still be incomplete; the site re-checks automatically after each match.</p>' : ''}</div>
   ${m.videos?.length ? `<div class="panel section"><h2>Video</h2><div class="grid three">${m.videos.map((v) => `<div class="video-card"><a href="${esc(v.url)}" target="_blank" rel="noopener"><img loading="lazy" alt="" src="${esc(v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`)}" style="width:100%;border-radius:8px"></a><span class="vcat c-${esc(v.category || 'highlights')}">${esc(v.categoryLabel || 'Video')}</span><span class="small">${esc(v.title)}</span><span class="small faint">${esc(v.channel)}</span></div>`).join('')}</div><p class="source">Linked by opponent name and publication date. <a href="#/video">More Spurs analysis in the Video Evidence Room →</a></p></div>` : ''}
@@ -929,10 +929,14 @@ const MATCH_TABS = {
   FPL: [['minutes', 'Min'], ['points', 'Points'], ['bonus', 'Bonus'], ['bps', 'BPS'], ['influence', 'Influence', 1], ['creativity', 'Creativity', 1], ['threat', 'Threat', 1], ['defcon', 'Def. contribution']],
 };
 function lineupTable(lineup, tab) {
-  const cols = MATCH_TABS[tab];
-  const rows = tab === 'Goalkeeping' ? lineup.filter((l) => l.pos === 'GK') : lineup;
-  return `<div class="table-wrap"><table data-sortable class="stack"><thead><tr><th class="sortable sticky-col">Player</th><th class="sortable">Role</th>${cols.map(([, l]) => `<th class="sortable r">${l}</th>`).join('')}</tr></thead><tbody>
-    ${rows.map((l) => `<tr><td class="sticky-col" data-v="${esc(l.name)}" data-label="Player"><a href="#/player/${l.playerId}">${esc(l.name)}</a> <span class="faint tiny">${esc(l.pos || '')}</span></td><td data-label="Role">${{ starter: 'Started', sub: 'Sub', unknown: '—' }[l.role]}</td>${cols.map(([k, lab, dp]) => `<td class="r" data-v="${l[k] ?? ''}" data-label="${esc(lab)}">${fmt(l[k], dp || 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const PO = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+  const rows = (tab === 'Goalkeeping' ? lineup.filter((l) => l.pos === 'GK') : lineup).slice()
+    .sort((a, b) => (a.role === 'starter' ? 0 : 1) - (b.role === 'starter' ? 0 : 1) || (PO[a.pos] ?? 9) - (PO[b.pos] ?? 9) || (b.minutes || 0) - (a.minutes || 0));
+  // Only columns that have at least one recorded value for this match.
+  const cols = MATCH_TABS[tab].filter(([k]) => rows.some((l) => l[k] !== null && l[k] !== undefined));
+  if (!rows.length || !cols.length) return '<p class="na small">No figures recorded in this group for this match yet.</p>';
+  return `<div class="table-wrap"><table data-sortable class="compact-pl"><thead><tr><th class="sortable sticky-col">Player</th>${cols.map(([, l]) => `<th class="sortable r">${l}</th>`).join('')}</tr></thead><tbody>
+    ${rows.map((l, i) => `<tr${i && rows[i - 1].role === 'starter' && l.role !== 'starter' ? ' class="lp-subs"' : ''}><td class="sticky-col" data-v="${esc(l.name)}">${l.pos ? `<span class="mg-pos ${esc(l.pos)}">${esc(l.pos)}</span>` : ''}<a href="#/player/${l.playerId}">${esc(l.name)}</a>${l.role === 'sub' ? ' <span class="faint tiny">sub</span>' : ''}</td>${cols.map(([k, , dp]) => `<td class="r" data-v="${l[k] ?? ''}">${fmt(l[k], dp || 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 AFTER.match = async (id) => {
   clearTimeout(window.__liveT);

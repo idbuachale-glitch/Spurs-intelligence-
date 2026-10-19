@@ -758,3 +758,7 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .live-tiles span { font-size: 0.72rem; color: var(--muted); }
 [hidden] { display: none !important; }
 .live-pl .mg-pos { display: inline-block; min-width: 32px; margin-right: 6px; } .live-pl tr.lp-subs td { border-top: 2px solid var(--line-strong); }
+.compact-pl th, .compact-pl td { padding: 7px 8px; font-size: 0.85rem; }
+.compact-pl .mg-pos { display: inline-block; min-width: 32px; margin-right: 6px; }
+.compact-pl tr.lp-subs td { border-top: 2px solid var(--line-strong); }
+.compact-pl td.sticky-col { background: var(--panel-solid, var(--bg-2)); }
