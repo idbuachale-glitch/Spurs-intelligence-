@@ -5,7 +5,7 @@ import { managerView, managerAfter } from './manager.js';
 
 const NAV = [
   ['overview', 'Overview', 'i-home'], ['fixtures', 'Fixtures & results', 'i-cal'], ['players', 'Player Lab', 'i-user'], ['team', 'Team statistics', 'i-chart'],
-  ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['table', 'League table', 'i-table'],
+  ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['injuries', 'Injury tracker', 'i-medic'], ['table', 'League table', 'i-table'],
   ['breakdown', 'Match breakdown', 'i-spark'], ['simulator', 'Season simulator', 'i-dice'], ['manager', 'Matchday Simulator', 'i-whistle'], ['style', 'De Zerbi tracker', 'i-trend'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
 ];
 const BOTTOM = ['overview', 'breakdown', 'players', 'fixtures'];
@@ -32,7 +32,28 @@ async function boot() {
   document.getElementById('sidebar-foot').innerHTML = `Updated ${esc(ago(state.meta.generatedAt))}<br>${state.status.healthy === false ? '<span style="color:var(--loss)">Source problem — see Data sources</span>' : (state.status.warnings || []).length ? 'Some sources retrying' : 'All sources healthy'}`;
   window.addEventListener('hashchange', route);
   route();
+  // Installed app: work offline, and refresh when reopened after a while.
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', async () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (Date.now() - hiddenAt < 10 * 60e3) return;
+    try { const m = await load('meta.json', { fresh: true }); if (m.generatedAt !== state.meta.generatedAt) { state.meta = m; state.cache.clear(); state.status = await load('status.json', { fresh: true }); route(); } } catch { /* offline: keep what is shown */ }
+  });
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__installEvt = e; document.querySelectorAll('[data-install]').forEach((b) => (b.hidden = false)); });
 }
+// "Add to home screen" help, shown until installed or dismissed.
+function installBanner() {
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let dismissed = false; try { dismissed = localStorage.getItem('si-install-dismissed') === '1'; } catch { /* ignore */ }
+  if (standalone || dismissed) return '';
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  return `<div class="banner info install-banner" id="install-banner"><span>📲 <strong>Get the app:</strong> ${ios ? 'tap the <strong>Share</strong> button in Safari, then <strong>Add to Home Screen</strong>.' : 'install Spurs Intelligence on your home screen.'}</span>${ios ? '' : `<button class="btn" data-install ${window.__installEvt ? '' : 'hidden'}>Install</button>`}<button class="btn ghost" data-install-close aria-label="Dismiss">✕</button></div>`;
+}
+document.addEventListener('click', async (e) => {
+  if (e.target.closest('[data-install]') && window.__installEvt) { window.__installEvt.prompt(); try { await window.__installEvt.userChoice; } catch { /* ignore */ } window.__installEvt = null; document.getElementById('install-banner')?.remove(); }
+  if (e.target.closest('[data-install-close]')) { try { localStorage.setItem('si-install-dismissed', '1'); } catch { /* ignore */ } document.getElementById('install-banner')?.remove(); }
+});
 
 function buildNav() {
   document.getElementById('nav').innerHTML = NAV.map(([k, l, i]) => `<a href="#/${k}" data-k="${k}">${icon(i)}${l}</a>`).join('');
@@ -190,7 +211,10 @@ VIEWS.overview = async () => {
       <div class="countdown" id="countdown" data-k="${esc(next.kickoff || '')}"></div>
       <div class="hero-meta">${next.hasPreview ? `<a href="#/match/${encodeURIComponent(next.id)}" style="color:#3ce8ff;font-weight:600">${oc(next)}Scout ${esc(next.opponent)}</a>` : ''}<span>Kick-off <strong>${esc(fmtTime(next.kickoff))}</strong> Bahrain time</span><span>${next.home ? 'Tottenham Hotspur Stadium' : 'Away'}</span>${me ? `<span>Spurs are <strong>${ordinal(me.position)}</strong> on ${me.points} pts</span>` : ''}</div>
     </section>` : `<section class="hero"><div class="kicker">No upcoming fixture is listed yet for ${esc(s.replace('-', '/'))}.</div></section>`;
-  return `${hero}
+  const outNow = players.players.filter((p) => p.current && ['i', 's'].includes(p.status));
+  const soonest = outNow.map((p) => ({ p, a: parseAbsence(p) })).filter((x) => x.a.back).sort((a, b) => a.a.back - b.a.back)[0];
+  const teamNews = state.season === state.seasons.current && outNow.length ? `<a class="panel section team-news" href="#/injuries"><span>🩹 <strong>${outNow.length} out</strong>${players.players.some((p) => p.current && p.status === 'd') ? ` · ${players.players.filter((p) => p.current && p.status === 'd').length} doubtful` : ''}${soonest ? ` · next back: <strong>${esc(soonest.p.web)}</strong> ${esc(fmtDate(soonest.a.back.toISOString(), { day: 'numeric', month: 'short' }))}` : ''}</span><span class="muted small">Injury tracker →</span></a>` : '';
+  return installBanner() + `${hero}${teamNews}
   <div class="grid four section">
     <div class="panel stat-tile"><span class="lbl">Latest result</span>${last ? `<a href="#/match/${encodeURIComponent(last.id)}" class="big" style="color:var(--text)">${last.score.spurs}–${last.score.opp} ${resultChip(last.result, true)}</a><span class="small muted">${oc(last)}${last.home ? 'v' : '@'} ${esc(last.opponent)}, ${esc(fmtDate(last.kickoff))}</span>` : '<span class="na">No result yet</span>'}</div>
     <div class="panel stat-tile"><span class="lbl">League position</span>${me ? `<span class="big">${ordinal(me.position)}</span><span class="small muted">${me.played} played · ${me.points} pts · GD ${me.gd > 0 ? '+' : ''}${me.gd}</span>` : '<span class="na">—</span>'}</div>
@@ -989,6 +1013,62 @@ VIEWS.breakdown = async (id) => {
 AFTER.breakdown = () => {
   const s = document.getElementById('bd-match');
   if (s) s.addEventListener('change', () => { location.hash = `#/breakdown/${encodeURIComponent(s.value)}`; });
+};
+
+// ---------------- Injury tracker ----------------
+const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+// Read the return date from the Premier League's news text, e.g. "Hamstring injury - Expected back 24 Oct".
+function parseAbsence(p) {
+  const news = p.news || '';
+  const m = news.match(/(?:expected back|back|until|from)\s+(\d{1,2})\s+([a-z]{3})/i);
+  let back = null;
+  if (m && MONTHS[m[2].toLowerCase()] !== undefined) {
+    const added = p.newsAdded ? new Date(p.newsAdded) : new Date();
+    let y = added.getUTCFullYear(); back = new Date(Date.UTC(y, MONTHS[m[2].toLowerCase()], Number(m[1])));
+    if (back < added - 14 * 86400e3) back = new Date(Date.UTC(y + 1, MONTHS[m[2].toLowerCase()], Number(m[1])));
+  }
+  const reason = news.split(' - ')[0] || p.statusLabel || 'Unavailable';
+  const kind = p.status === 's' ? 'suspended' : p.status === 'd' ? 'doubtful' : 'injured';
+  return { back, unknown: !back && /unknown/i.test(news), reason: p.status === 's' ? 'Suspended' : reason, kind, chance: p.chanceNext };
+}
+VIEWS.injuries = async () => {
+  const [ps, fx] = await Promise.all([loadSeason('players.json'), loadSeason('fixtures.json')]);
+  const now = Date.now();
+  const upcoming = fx.fixtures.filter((f) => !f.friendly && f.kickoff && (f.status === 'SCHEDULED' || f.status === 'LIVE') && Date.parse(f.kickoff) > now - 3 * 3600e3).sort((a, b) => a.kickoff.localeCompare(b.kickoff));
+  const cols = upcoming.slice(0, 6);
+  const out = ps.players.filter((p) => p.current && ['i', 's', 'd'].includes(p.status)).map((p) => ({ p, a: parseAbsence(p) }))
+    .map((x) => ({ ...x, misses: x.a.kind === 'doubtful' ? [] : x.a.back ? upcoming.filter((f) => Date.parse(f.kickoff) < x.a.back.getTime()) : null }))
+    .sort((x, y) => (x.a.kind === 'doubtful') - (y.a.kind === 'doubtful') || (x.a.back ? x.a.back.getTime() : 9e15) - (y.a.back ? y.a.back.getTime() : 9e15));
+  const fit = ps.players.filter((p) => p.current && !['i', 's', 'u', 'n'].includes(p.status)).length;
+  const fmtBack = (a) => (a.back ? fmtDate(a.back.toISOString(), { weekday: 'short', day: 'numeric', month: 'short' }) : a.unknown ? 'Not announced' : '—');
+  const daysTo = (a) => (a.back ? Math.max(0, Math.ceil((a.back.getTime() - now) / 86400e3)) : null);
+  const cell = (x, f, i) => {
+    if (x.a.kind === 'doubtful') return i === 0 ? `<td class="inj-c d" title="${x.a.chance ?? '?'}% chance of playing">${x.a.chance ?? '?'}%</td>` : '<td class="inj-c ok" title="Expected available">✓</td>';
+    if (!x.a.back) return '<td class="inj-c u" title="Return date not announced">?</td>';
+    return Date.parse(f.kickoff) < x.a.back.getTime() ? '<td class="inj-c x" title="Misses this match">✕</td>' : '<td class="inj-c ok" title="Expected back">✓</td>';
+  };
+  const grid = cols.length ? `<div class="table-wrap"><table class="inj-grid"><thead><tr><th>Player</th>${cols.map((f) => `<th title="${esc(f.opponent)} · ${esc(fmtDate(f.kickoff))}">${oc(f) || esc(f.opponentShort || f.opponent.slice(0, 3))}<span>${esc(fmtDate(f.kickoff, { day: 'numeric', month: 'short' }))}</span></th>`).join('')}</tr></thead>
+    <tbody>${out.map((x) => `<tr><td><a href="#/player/${x.p.id}">${esc(x.p.web)}</a></td>${cols.map((f, i) => cell(x, f, i)).join('')}</tr>`).join('')}</tbody></table></div>
+    <p class="tiny faint" style="margin:6px 0 0"><span class="inj-key x">✕</span> misses · <span class="inj-key ok">✓</span> expected back · <span class="inj-key d">%</span> chance of playing · <span class="inj-key u">?</span> return date not announced</p>` : '';
+  const cards = out.map((x) => {
+    const d = daysTo(x.a);
+    const missTxt = x.a.kind === 'doubtful' ? `${x.a.chance ?? '?'}% chance of playing the next match` : x.misses === null ? 'Return date not announced' : x.misses.length ? `Misses ${x.misses.length} match${x.misses.length > 1 ? 'es' : ''}` : 'Expected back for the next match';
+    return `<div class="panel inj-card ${x.a.kind}"><div class="inj-head">${photoHtml(x.p)}<div><a href="#/player/${x.p.id}"><strong>${esc(x.p.web)}</strong></a><div class="small muted">${esc(state.meta.posLabels[x.p.pos] || x.p.pos)}</div></div>
+      <span class="inj-tag ${x.a.kind}">${{ injured: 'Injured', suspended: 'Suspended', doubtful: 'Doubtful' }[x.a.kind]}</span></div>
+      <div class="statlist"><div class="statrow"><span>Reason</span><span class="v">${esc(x.a.reason)}</span></div>
+      ${x.a.kind !== 'doubtful' ? `<div class="statrow"><span>Expected back</span><span class="v">${esc(fmtBack(x.a))}${d !== null ? `<small>${d === 0 ? 'today' : `in ${d} day${d > 1 ? 's' : ''}`}</small>` : ''}</span></div>` : ''}
+      <div class="statrow"><span>${esc(missTxt)}</span><span class="v inj-miss">${(x.misses || []).slice(0, 8).map((f) => `<a href="#/match/${encodeURIComponent(f.id)}" title="${esc(f.opponent)} · ${esc(fmtDate(f.kickoff))}">${oc(f) || esc(f.opponentShort || f.opponent.slice(0, 3))}</a>`).join('')}</span></div></div>
+      ${x.p.newsAdded ? `<p class="tiny faint" style="margin:6px 0 0">Reported ${esc(fmtDate(x.p.newsAdded, { day: 'numeric', month: 'short' }))}</p>` : ''}</div>`;
+  }).join('');
+  const next = upcoming[0];
+  return `<div class="section-head"><h1>Injury tracker</h1><span class="muted small">Updated with the Premier League's team news</span></div>
+    <div class="grid three section">
+      <div class="panel stat-tile"><span class="lbl">Unavailable</span><span class="big">${out.filter((x) => x.a.kind !== 'doubtful').length}</span><span class="small muted">${out.filter((x) => x.a.kind === 'injured').length} injured · ${out.filter((x) => x.a.kind === 'suspended').length} suspended</span></div>
+      <div class="panel stat-tile"><span class="lbl">Doubtful</span><span class="big">${out.filter((x) => x.a.kind === 'doubtful').length}</span><span class="small muted">Chance of playing given</span></div>
+      <div class="panel stat-tile"><span class="lbl">Fit for ${next ? `${next.home ? 'v' : '@'} ${esc(next.opponentShort || next.opponent)}` : 'next match'}</span><span class="big">${fit}</span><span class="small muted">first-team players</span></div>
+    </div>
+    ${out.length ? `<section class="panel section"><h2 style="margin-top:0">Next ${cols.length} matches</h2>${grid}</section><div class="grid two section">${cards}</div>` : '<div class="empty">Everyone is available. No injuries or suspensions are listed.</div>'}
+    <p class="source">From the Premier League's official availability flags and news (via the FPL API), checked every 20 minutes. Return dates are the club's estimates and often move; matches are counted as missed when they fall before the expected return date. Cup suspensions may not be listed.</p>`;
 };
 
 VIEWS.manager = managerView;

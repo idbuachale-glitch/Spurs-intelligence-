@@ -561,3 +561,27 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .mg-opp { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 8px; align-items: center; padding: 5px 0; font-size: .86rem; }
 .mg-opp .mg-bar { grid-column: 1 / -1; margin: 0; height: 4px; }
 .mg-opp .v { font-weight: 600; }
+
+/* Injury tracker */
+.inj-grid { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.inj-grid th { font-weight: 600; text-align: center; padding: 6px 2px; vertical-align: bottom; }
+.inj-grid th:first-child, .inj-grid td:first-child { text-align: left; white-space: nowrap; padding-right: 8px; }
+.inj-grid th .tcrest { display: block; margin: 0 auto 2px; width: 22px; height: 22px; }
+.inj-grid th span { display: block; font-size: .64rem; color: var(--muted); font-weight: 500; }
+.inj-grid td { padding: 6px 2px; border-top: 1px solid var(--line); }
+.inj-c { text-align: center; font-weight: 700; }
+.inj-c.x, .inj-key.x { color: var(--loss); } .inj-c.ok, .inj-key.ok { color: var(--win); } .inj-c.d, .inj-key.d { color: var(--warn); } .inj-c.u, .inj-key.u { color: var(--faint); }
+.inj-c.x { background: rgba(239,95,116,.12); }
+.inj-key { font-weight: 700; }
+.inj-head { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; margin-bottom: 8px; }
+.inj-head img, .inj-head .photo { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; object-position: top; background: var(--panel-2); }
+.inj-tag { font-size: .7rem; font-weight: 700; border-radius: 999px; padding: 3px 9px; border: 1px solid currentColor; }
+.inj-tag.injured { color: var(--loss); } .inj-tag.suspended { color: var(--warn); } .inj-tag.doubtful { color: var(--draw); }
+.inj-card.injured { border-left: 3px solid var(--loss); } .inj-card.suspended { border-left: 3px solid var(--warn); } .inj-card.doubtful { border-left: 3px solid var(--draw); }
+.inj-miss { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; } .inj-miss .tcrest { margin: 0; width: 20px; height: 20px; }
+.install-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.install-banner > span { flex: 1; min-width: 200px; }
+.install-banner .btn { padding: 5px 12px; }
+.team-news { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--text); padding: 12px 16px; }
+.inj-head .avatar { width: 46px; height: 46px; font-size: .95rem; flex: none; }
+.inj-head .avatar img { width: 100%; height: 100%; }
