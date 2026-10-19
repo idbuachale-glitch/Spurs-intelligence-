@@ -549,3 +549,15 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .mgr-subs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 560px) { .mgr-subs { grid-template-columns: 1fr; } }
 .mg-energy { width: 40px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; } .mg-energy i { display: block; height: 100%; background: var(--win); }
+/* Matchday Simulator: tactics explanations and match prep */
+.mg-why { margin: 2px 0 0; color: var(--muted); line-height: 1.4; }
+.mg-eff b { font-weight: 700; font-size: .72rem; } .mg-eff b.up { color: var(--win); } .mg-eff b.down { color: var(--loss); } .mg-eff { font-size: .72rem; color: var(--faint); }
+.mg-adv { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.mg-adv > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mg-adv.ok strong { color: var(--muted); }
+.mg-adv .btn, .mg-plan .btn { padding: 4px 10px; font-size: .78rem; margin-left: auto; }
+.mg-plan { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mg-plan .btn { justify-self: start; margin: 4px 0 0; }
+.mg-opp { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 8px; align-items: center; padding: 5px 0; font-size: .86rem; }
+.mg-opp .mg-bar { grid-column: 1 / -1; margin: 0; height: 4px; }
+.mg-opp .v { font-weight: 600; }

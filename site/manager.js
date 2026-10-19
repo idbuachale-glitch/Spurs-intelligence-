@@ -18,8 +18,99 @@ export const FORMATIONS = {
   '3-5-2': { bias: [1.01, 0.98], slots: [s('GK', ['GK'], 50, 91), ...back3, s('LWB', WB, 10, 48), s('CM', M, 31, 54), s('DM', M, 50, 61), s('CM', M, 69, 54), s('RWB', WB, 90, 48), s('ST', F, 37, 20), s('ST', F, 63, 20)] },
   '5-3-2': { bias: [0.86, 0.82], slots: [s('GK', ['GK'], 50, 91), s('LWB', WB, 10, 66), ...back3, s('RWB', WB, 90, 66), s('CM', M, 28, 50), s('CM', M, 50, 55), s('CM', M, 72, 50), s('ST', F, 37, 20), s('ST', F, 63, 20)] },
 };
-const PRESS = { low: { label: 'Low block', f: 0.94, a: 0.97, tire: 0.6, poss: -6 }, mid: { label: 'Mid press', f: 1, a: 1, tire: 1, poss: 0 }, high: { label: 'High press', f: 1.08, a: 0.95, tire: 1.7, poss: 3 } };
+// ---------- Tactics ----------
+// Each option has a base effect on Spurs' chances (f) and the opponent's (a), plus
+// matchup effects computed from the real opponent profile in planEffects().
+const PRESS = { low: { label: 'Low block', f: 0.94, a: 0.95, tire: 0.6, poss: -6 }, mid: { label: 'Mid press', f: 1, a: 1, tire: 1, poss: 0 }, high: { label: 'High press', f: 1.04, a: 0.98, tire: 1.7, poss: 3 } };
 const MENT = { def: { label: 'Defensive', f: 0.84, a: 0.8, poss: -4 }, bal: { label: 'Balanced', f: 1, a: 1, poss: 0 }, att: { label: 'Attacking', f: 1.16, a: 1.15, poss: 4 } };
+const LINE = { deep: { label: 'Deep', f: 0.96, a: 0.95, poss: -3 }, std: { label: 'Standard', f: 1, a: 1, poss: 0 }, high: { label: 'High line', f: 1.04, a: 1.0, poss: 3 } };
+const TEMPO = { patient: { label: 'Patient', f: 0.98, a: 0.95, poss: 6 }, normal: { label: 'Normal', f: 1, a: 1, poss: 0 }, direct: { label: 'Direct', f: 1.0, a: 1.04, poss: -6 } };
+const WIDTH = { narrow: { label: 'Narrow', f: 1, a: 0.98, poss: 0 }, bal: { label: 'Balanced', f: 1, a: 1, poss: 0 }, wide: { label: 'Wide', f: 1, a: 1.02, poss: 0 } };
+const SETP = { std: { label: 'Standard', f: 1, a: 1 }, focus: { label: 'Target set pieces', f: 1.0, a: 1.02 } };
+export const TACTICS = [
+  ['press', 'Pressing', PRESS, 'How high and hard Spurs close down when they lose the ball.'],
+  ['ment', 'Mentality', MENT, 'How many players commit forward.'],
+  ['line', 'Defensive line', LINE, 'Where the back line holds: high squeezes the pitch but leaves space behind.'],
+  ['tempo', 'Tempo', TEMPO, 'Patient build-up keeps the ball; direct goes forward quickly.'],
+  ['width', 'Width', WIDTH, 'Wide play brings crosses; narrow play goes through the middle.'],
+  ['setp', 'Set pieces', SETP, 'Extra rehearsed routines and bodies in the box for corners and free kicks.'],
+];
+export const DEFAULT_PLAN = { press: 'mid', ment: 'bal', line: 'std', tempo: 'normal', width: 'bal', setp: 'std', mark: 'none' };
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// Effects stack, but with diminishing returns so no plan swings a match unrealistically.
+const damp = (x) => clamp(1 + (x - 1) * 0.6, 0.72, 1.3);
+
+// Opponent profile from the site's scouting data: value v league average for each measure.
+function oppProfile(preview) {
+  const P = {}; for (const r of preview?.profile || []) P[r.key] = r;
+  const rel = (k) => (P[k] && P[k].value !== null && P[k].leagueAvg ? (P[k].value - P[k].leagueAvg) / P[k].leagueAvg : 0);
+  return { P, rel };
+}
+const pctTxt = (r) => `${r > 0 ? '+' : ''}${Math.round(r * 100)}%`;
+const ordn = (n) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
+
+// The matchup: how each option fares against this particular opponent. Returns the
+// multipliers and a plain-English reason for every option, so the page can explain itself.
+function planEffects(plan, ctx) {
+  const { P, rel } = ctx.opp;
+  const name = ctx.f.opponent;
+  const why = {}; let f = 1; let a = 1; let poss = 0; let tire = 1;
+  const note = (dim, opt, text, df, da) => { (why[dim] ||= {})[opt] = { text, df, da }; if (plan[dim] === opt) { f *= df; a *= da; } };
+  const fact = (k, label) => (P[k] ? `${label} ${P[k].unit === '%' ? `${fmtPlain(P[k].value, 1)}%` : fmtPlain(P[k].value, 2)} (${ordn(P[k].rank)} of ${P[k].of}; league ${P[k].unit === '%' ? `${fmtPlain(P[k].leagueAvg, 1)}%` : fmtPlain(P[k].leagueAvg, 2)})` : null);
+  // Pressing v their passing security and how much they go long.
+  const badPass = clamp(-rel('passPct') * 1.6, -0.06, 0.1); const longBall = clamp(rel('longBallPct'), -0.3, 0.3);
+  for (const [k, o] of Object.entries(PRESS)) {
+    let df = o.f; let da = o.a; let text = '';
+    if (k === 'high') { df *= 1 + badPass - longBall * 0.1; da *= 1 - badPass * 0.5; text = P.passPct ? `${name} complete ${fmtPlain(P.passPct.value, 1)}% of passes (${ordn(P.passPct.rank)} of ${P.passPct.of}). ${badPass > 0.03 ? 'Pressing them should force mistakes high up.' : badPass < -0.02 ? 'They pass well, so the press is easier to play through.' : 'Pressing gives a normal return.'} Costs more energy late on.` : 'Costs more energy late on.'; }
+    else if (k === 'low') { text = `Concedes territory${P.possession ? `; ${name} average ${fmtPlain(P.possession.value, 1)}% possession` : ''}. Safer, but Spurs create less.`; }
+    else text = 'Balanced: neither extra risk nor extra reward.';
+    note('press', k, text, df, da);
+  }
+  // Defensive line v their counter-attacking (low possession, long balls).
+  const counter = clamp(-rel('possession') * 0.8 + longBall * 0.3, 0, 0.35);
+  for (const [k, o] of Object.entries(LINE)) {
+    let df = o.f; let da = o.a; let text = '';
+    if (k === 'high') { da *= 1 + counter * 0.45; text = counter > 0.08 ? `${name} play on the break (${fmt1(P.possession)} possession), so a high line leaves space behind: their chances rise about ${Math.round(counter * 45)}%.` : `${name} rarely counter, so a high line is fairly safe and pins them in.`; }
+    else if (k === 'deep') { da *= 1 - counter * 0.15; text = `Protects the space behind${counter > 0.08 ? ` against a counter-attacking side` : ''}, but Spurs win the ball back further from goal.`; }
+    else text = 'The usual distance between the lines.';
+    note('line', k, text, df, da);
+  }
+  // Tempo v their pressing: direct play beats a heavy press; patience suits a low block.
+  const pressHeavy = clamp(-rel('ppda'), -0.3, 0.4); const sitDeep = clamp(-rel('fieldTilt'), 0, 0.5);
+  for (const [k, o] of Object.entries(TEMPO)) {
+    let df = o.f; let da = o.a; let text = '';
+    if (k === 'direct') { df *= 1 + pressHeavy * 0.25 - sitDeep * 0.1; text = P.ppda ? `${name}'s pressing: ${fmtPlain(P.ppda.value, 1)} passes allowed per action (${ordn(P.ppda.rank)} most intense). ${pressHeavy > 0.05 ? 'Going long early skips their press.' : sitDeep > 0.1 ? 'They sit deep, so there is little space to run into.' : 'A normal return.'}` : 'Skips midfield; gives the ball back more often.'; }
+    else if (k === 'patient') { df *= 1 + sitDeep * 0.08 - pressHeavy * 0.08; text = sitDeep > 0.1 ? `${name} sit deep (only ${fmt1(P.fieldTilt)} of the passing happens in their attacking half): patience moves them around until gaps open.` : 'Keeps the ball and limits their chances, with fewer shots for Spurs.'; }
+    else text = 'Mixes short and long passing.';
+    note('tempo', k, text, df, da);
+  }
+  // Width v their aerial strength; narrow v how many big chances they give up.
+  const weakAir = clamp(-rel('aerialPct') * 1.5, -0.1, 0.12); const leaky = clamp(rel('bigChancesAgainst') * 0.3, -0.06, 0.08);
+  for (const [k, o] of Object.entries(WIDTH)) {
+    let df = o.f; let da = o.a; let text = '';
+    if (k === 'wide') { df *= 1 + weakAir; text = P.aerialPct ? `${name} win ${fmtPlain(P.aerialPct.value, 1)}% of aerial duels (${ordn(P.aerialPct.rank)} of ${P.aerialPct.of}). ${weakAir > 0.03 ? 'Crosses should find heads.' : weakAir < -0.03 ? 'They are strong in the air; crosses are less likely to pay off.' : 'Crossing gives a normal return.'}` : 'More crosses into the box.'; }
+    else if (k === 'narrow') { df *= 1 + leaky; text = P.bigChancesAgainst ? `${name} give up ${fmtPlain(P.bigChancesAgainst.value, 2)} big chances a game. ${leaky > 0.02 ? 'Combining through the middle should open them up.' : 'They are hard to play through centrally.'}` : 'Combinations through the middle.'; }
+    else text = 'Uses the whole pitch.';
+    note('width', k, text, df, da);
+  }
+  // Set pieces v how much set-piece xG they concede.
+  const spWeak = clamp(rel('xgSetPlayAgainst') * 0.12 + 0.02, -0.03, 0.08);
+  note('setp', 'focus', P.xgSetPlayAgainst ? `${name} concede ${fmtPlain(P.xgSetPlayAgainst.value, 2)} set-piece xG a game (${ordn(P.xgSetPlayAgainst.rank)} best of ${P.xgSetPlayAgainst.of}). ${spWeak > 0.03 ? 'A real chance to score from corners.' : 'They defend set pieces well.'}` : 'More danger from corners.', SETP.focus.f * (1 + spWeak), SETP.focus.a);
+  note('setp', 'std', 'Normal set-piece preparation.', 1, 1);
+  // Man-marking their most dangerous player.
+  const dm = ctx.preview?.dangerMen?.[0];
+  if (dm) {
+    const tot = (ctx.preview.dangerMen || []).reduce((x, d) => x + (d.xg || 0) + (d.xa || 0), 0) || 1;
+    const share = ((dm.xg || 0) + (dm.xa || 0)) / tot;
+    note('mark', 'man', `${dm.name} produces ${Math.round(share * 100)}% of their top attackers' xG+xA. Man-marking him cuts their threat; it costs Spurs a little going forward.`, 0.97, 1 - 0.22 * share);
+    note('mark', 'none', 'Zonal marking: everyone defends space.', 1, 1);
+  }
+  for (const [dim, T] of [['press', PRESS], ['ment', MENT], ['line', LINE], ['tempo', TEMPO], ['width', WIDTH]]) { poss += T[plan[dim]]?.poss || 0; }
+  for (const [k, o] of Object.entries(MENT)) note('ment', k, k === 'att' ? 'More shots for both teams.' : k === 'def' ? 'Fewer chances at both ends.' : 'Normal risk.', o.f, o.a);
+  tire = PRESS[plan.press].tire * (plan.line === 'high' ? 1.1 : 1);
+  return { f: damp(f), a: damp(a), poss, tire, why, marked: plan.mark === 'man' && dm ? dm.name : null, dangerMan: dm || null };
+}
+const fmt1 = (r) => (r ? `${fmtPlain(r.value, 1)}%` : '');
 
 // ---------- Ratings from real per-90 figures ----------
 const ATT = ['xg', 'xa', 'threat', 'creativity'];
@@ -97,25 +188,34 @@ function strength(xi) { // xi: [{ player, slot, energy, sentOff }]
 const pois = (k, l) => { let p = Math.exp(-l); for (let i = 1; i <= k; i++) p *= l / i; return p; };
 function probs(ls, lo) { let w = 0; let dr = 0; let l = 0; for (let i = 0; i <= 10; i++) for (let j = 0; j <= 10; j++) { const p = pois(i, ls) * pois(j, lo); if (i > j) w += p; else if (i === j) dr += p; else l += p; } return { w: Math.round(w * 100), d: Math.round(dr * 100), l: Math.round(l * 100) }; }
 
+// Best possible XI: an exact assignment (Hungarian method) maximising the total of each
+// player's rating in his slot, with natural- and main-role bonuses. Only eligible players
+// are considered for each slot.
 function autoPick(slots, players, taken = new Set()) {
-  // Fill the whole XI at once: repeatedly take the best remaining (slot, player) pair by
-  // rating in that slot, so natural-role players land in their own positions first.
-  const out = slots.map(() => null); const used = new Set(taken);
-  const score = (p, sl) => p.r.ovr * fitPen(p, sl) + (naturalIn(p, sl) ? 4 : 0);
-  for (let n = 0; n < slots.length; n++) {
-    let best = null;
-    for (let i = 0; i < slots.length; i++) {
-      if (out[i]) continue;
-      const pool = eligibleFor(slots[i], players);
-      for (const p of pool) {
-        if (used.has(p.id)) continue;
-        const v = score(p, slots[i]);
-        if (!best || v > best.v) best = { i, p, v };
+  const pool = players.filter((p) => !taken.has(p.id));
+  const score = (p, sl) => p.r.ovr * fitPen(p, sl) + (naturalIn(p, sl) ? 4 : 0) + ((ROLES[p.name] || [])[0] === slotRole(sl) ? 2 : 0); // first listed role = main role
+  const n = slots.length; const m = Math.max(pool.length, n);
+  const BIG = 1e6;
+  const elig = slots.map((sl) => new Set(eligibleFor(sl, pool).map((p) => p.id)));
+  // cost[i][j]: slot i, player j (padded with dummy players that cost BIG)
+  const cost = slots.map((sl, i) => Array.from({ length: m }, (_, j) => (j < pool.length && elig[i].has(pool[j].id) ? 200 - score(pool[j], sl) : BIG)));
+  const u = new Array(n + 1).fill(0); const v = new Array(m + 1).fill(0); const pj = new Array(m + 1).fill(0); const way = new Array(m + 1).fill(0);
+  for (let i = 1; i <= n; i++) {
+    pj[0] = i; let j0 = 0; const minv = new Array(m + 1).fill(Infinity); const usedC = new Array(m + 1).fill(false);
+    do {
+      usedC[j0] = true; const i0 = pj[j0]; let delta = Infinity; let j1 = 0;
+      for (let j = 1; j <= m; j++) if (!usedC[j]) {
+        const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
+        if (cur < minv[j]) { minv[j] = cur; way[j] = j0; }
+        if (minv[j] < delta) { delta = minv[j]; j1 = j; }
       }
-    }
-    if (!best) break;
-    out[best.i] = best.p.id; used.add(best.p.id);
+      for (let j = 0; j <= m; j++) if (usedC[j]) { u[pj[j]] += delta; v[j] -= delta; } else minv[j] -= delta;
+      j0 = j1;
+    } while (pj[j0] !== 0);
+    do { const j1 = way[j0]; pj[j0] = pj[j1]; j0 = j1; } while (j0);
   }
+  const out = slots.map(() => null);
+  for (let j = 1; j <= m; j++) if (pj[j] && j - 1 < pool.length && cost[pj[j] - 1][j - 1] < BIG) out[pj[j] - 1] = pool[j - 1].id;
   return out;
 }
 
@@ -145,14 +245,16 @@ async function context() {
   const base = next ? next.expectedGoals : { spurs: 1.4, opp: 1.3 };
   const avail = squad.filter((p) => !p.out);
   const baseXi = autoPick(FORMATIONS['4-3-3'].slots, avail).map((id, i) => ({ player: avail.find((p) => p.id === id), slot: FORMATIONS['4-3-3'].slots[i] }));
-  return { f, next, base, squad, avail, oppXi, baseStr: strength(baseXi) };
+  const mf = await loadSeason(`matches/${f.id}.json`, state.season, { optional: true });
+  const preview = mf?.preview || null;
+  return { f, next, base, squad, avail, oppXi, baseStr: strength(baseXi), preview, opp: oppProfile(preview) };
 }
 
-function lambdas(ctx, xi, form, press, ment, extra = { f: 1, a: 1 }) {
-  const st = strength(xi); const b = FORMATIONS[form].bias; const P = PRESS[press]; const Mt = MENT[ment];
-  const ls = ctx.base.spurs * (st.att / ctx.baseStr.att) ** 1.6 * b[0] * P.f * Mt.f * extra.f;
-  const lo = ctx.base.opp * (ctx.baseStr.def / st.def) ** 1.6 * b[1] * P.a * Mt.a * extra.a;
-  return { ls: Math.max(0.15, ls), lo: Math.max(0.15, lo), st };
+function lambdas(ctx, xi, form, plan, extra = { f: 1, a: 1 }) {
+  const st = strength(xi); const b = FORMATIONS[form].bias; const E = planEffects(plan, ctx);
+  const ls = ctx.base.spurs * (st.att / ctx.baseStr.att) ** 1.6 * b[0] * E.f * extra.f;
+  const lo = ctx.base.opp * (ctx.baseStr.def / st.def) ** 1.6 * b[1] * E.a * extra.a;
+  return { ls: Math.max(0.15, ls), lo: Math.max(0.15, lo), st, E };
 }
 
 // ---------- View: team selection ----------
@@ -164,7 +266,8 @@ export async function managerView() {
   const form = saved.form && FORMATIONS[saved.form] ? saved.form : '4-3-3';
   let pick = Array.isArray(saved.xi) && saved.form === form ? saved.xi.map((id, i) => { const p = ctx.avail.find((q) => q.id === id); return p && eligibleFor(FORMATIONS[form].slots[i], ctx.avail).includes(p) ? id : null; }) : null;
   if (!pick || pick.length !== 11) pick = autoPick(FORMATIONS[form].slots, ctx.avail);
-  G = { ctx, form, pick, press: saved.press || 'mid', ment: saved.ment || 'bal', match: null };
+  const plan = { ...DEFAULT_PLAN }; for (const k of Object.keys(plan)) if (saved.plan?.[k]) plan[k] = saved.plan[k];
+  G = { ctx, form, pick, plan, match: null };
   const f = ctx.f;
   const rec = saved.history || [];
   const wdl = ['W', 'D', 'L'].map((r) => rec.filter((h) => h.r === r).length);
@@ -175,8 +278,7 @@ export async function managerView() {
     <div class="mgr-grid section">
       <div>
         <div class="mgr-ctl"><label class="small muted">Formation</label><div class="seg" id="mg-form">${Object.keys(FORMATIONS).map((k) => `<button data-v="${k}" aria-pressed="${k === form}">${k}</button>`).join('')}</div></div>
-        <div class="mgr-ctl"><label class="small muted">Pressing</label><div class="seg" id="mg-press">${Object.entries(PRESS).map(([k, v]) => `<button data-v="${k}" aria-pressed="${k === G.press}">${v.label}</button>`).join('')}</div></div>
-        <div class="mgr-ctl"><label class="small muted">Mentality</label><div class="seg" id="mg-ment">${Object.entries(MENT).map(([k, v]) => `<button data-v="${k}" aria-pressed="${k === G.ment}">${v.label}</button>`).join('')}</div></div>
+        <div id="mg-tactics"></div>
         <div class="pitch" id="mg-pitch"></div>
         <div class="mgr-actions"><button class="btn ghost" id="mg-auto">Auto-pick best XI</button><button class="btn" id="mg-kick">Kick off ▶</button></div>
       </div>
@@ -186,7 +288,84 @@ export async function managerView() {
         <p class="source">Ratings (56–96): each player's per-90 figures this season ranked against Premier League players in his position (FPL/Opta). Players with few minutes are rated from fewer games and pulled towards average. Players can only be picked in the roles they play; those whose exact role isn't known can play anywhere in their line at 93%. Injured, suspended and loaned-out players can't be picked. The match starts from the site's real forecast for this fixture (expected goals ${fmtPlain(ctx.base.spurs, 2)}–${fmtPlain(ctx.base.opp, 2)} with the strongest XI) and adjusts it for your choices.</p>
       </div>
     </div>
+    <section class="section" id="mg-prep"></section>
     <div id="mg-sheet" class="mgr-sheet" hidden></div>`;
+}
+
+// ---------- Tactics controls ----------
+function tacticsHtml(prefix) {
+  const E = planEffects(G.plan, G.ctx);
+  const rows = TACTICS.map(([dim, label, T, help]) => {
+    const w = E.why[dim]?.[G.plan[dim]];
+    return `<div class="mgr-ctl"><label class="small muted" title="${esc(help)}">${label}</label><div class="seg" data-dim="${dim}" id="${prefix}-${dim}">${Object.entries(T).map(([k, v]) => `<button data-v="${k}" aria-pressed="${k === G.plan[dim]}">${v.label}</button>`).join('')}</div>${w && prefix === 'mg' ? `<p class="tiny mg-why">${effTag(w)} ${esc(w.text)}</p>` : ''}</div>`;
+  });
+  if (E.dangerMan) {
+    const w = E.why.mark?.[G.plan.mark];
+    rows.push(`<div class="mgr-ctl"><label class="small muted">Marking</label><div class="seg" data-dim="mark" id="${prefix}-mark"><button data-v="none" aria-pressed="${G.plan.mark !== 'man'}">Zonal</button><button data-v="man" aria-pressed="${G.plan.mark === 'man'}">Man-mark ${esc(E.dangerMan.name)}</button></div>${w && prefix === 'mg' ? `<p class="tiny mg-why">${effTag(w)} ${esc(w.text)}</p>` : ''}</div>`);
+  }
+  return rows.join('');
+}
+// "+4% Spurs chances · −3% theirs" chip for an option's effect.
+function effTag(w) {
+  const pf = Math.round((w.df - 1) * 100); const pa = Math.round((w.da - 1) * 100);
+  if (!pf && !pa) return '';
+  return `<span class="mg-eff">${pf ? `<b class="${pf > 0 ? 'up' : 'down'}">${pf > 0 ? '+' : ''}${pf}% Spurs chances</b>` : ''}${pf && pa ? ' · ' : ''}${pa ? `<b class="${pa < 0 ? 'up' : 'down'}">${pa > 0 ? '+' : ''}${pa}% theirs</b>` : ''}</span>`;
+}
+
+// ---------- Match prep: what the data suggests ----------
+const xPts = (ls, lo) => { const p = probs(ls, lo); return (3 * p.w + p.d) / 100; };
+function bestPlans() {
+  const dims = [['press', Object.keys(PRESS)], ['ment', Object.keys(MENT)], ['line', Object.keys(LINE)], ['tempo', Object.keys(TEMPO)], ['width', Object.keys(WIDTH)], ['setp', Object.keys(SETP)], ['mark', G.ctx.preview?.dangerMen?.length ? ['none', 'man'] : ['none']]];
+  const combos = [{}];
+  for (const [d, opts] of dims) { const next = []; for (const c of combos) for (const o of opts) next.push({ ...c, [d]: o }); combos.splice(0, combos.length, ...next); }
+  // Each area's effect is independent, so read every option's multipliers once.
+  const W = planEffects(DEFAULT_PLAN, G.ctx).why;
+  const mult = (plan, key) => Object.keys(plan).reduce((acc, d) => acc * (W[d]?.[plan[d]]?.[key] ?? 1), 1);
+  const results = [];
+  for (const form of Object.keys(FORMATIONS)) {
+    const slots = FORMATIONS[form].slots; const ids = autoPick(slots, G.ctx.avail);
+    const xi = ids.map((id, i) => ({ player: G.ctx.avail.find((p) => p.id === id) || null, slot: slots[i] }));
+    const base = lambdas(G.ctx, xi, form, DEFAULT_PLAN);
+    for (const plan of combos) { const ls = Math.max(0.15, (base.ls / base.E.f) * damp(mult(plan, 'df'))); const lo = Math.max(0.15, (base.lo / base.E.a) * damp(mult(plan, 'da'))); results.push({ form, plan, ls, lo, xp: xPts(ls, lo) }); }
+  }
+  results.sort((a, b) => b.xp - a.xp);
+  // Keep three genuinely different plans (different formation or at least two settings).
+  const out = [];
+  for (const r of results) { if (out.every((o) => o.form !== r.form || Object.keys(r.plan).filter((k) => r.plan[k] !== o.plan[k]).length >= 2)) out.push(r); if (out.length === 3) break; }
+  return out;
+}
+const planLabel = (plan) => TACTICS.map(([dim, , T]) => T[plan[dim]].label).concat(plan.mark === 'man' && G.ctx.preview?.dangerMen?.[0] ? [`man-mark ${G.ctx.preview.dangerMen[0].name}`] : []).join(' · ');
+
+function prepHtml() {
+  const ctx = G.ctx; const { P } = ctx.opp; const name = ctx.f.opponent;
+  if (!ctx.preview) return '<div class="banner info">Scouting data for this opponent is not available yet, so tactics use neutral effects.</div>';
+  // One-at-a-time advice: best option in each area with everything else as you have it.
+  const xi = xiFromPick(); const cur = lambdas(ctx, xi, G.form, G.plan); const curXp = xPts(cur.ls, cur.lo);
+  const advice = [];
+  for (const [dim, label, T] of [...TACTICS, ['mark', 'Marking', { none: { label: 'Zonal' }, man: { label: `Man-mark ${ctx.preview.dangerMen?.[0]?.name || ''}` } }]]) {
+    if (dim === 'mark' && !ctx.preview.dangerMen?.length) continue;
+    let best = null;
+    for (const k of Object.keys(T)) { const r = lambdas(ctx, xi, G.form, { ...G.plan, [dim]: k }); const xp = xPts(r.ls, r.lo); if (!best || xp > best.xp + 1e-9) best = { k, xp }; }
+    const w = planEffects({ ...G.plan, [dim]: best.k }, ctx).why[dim]?.[best.k];
+    advice.push({ dim, label, opt: T[best.k].label, k: best.k, gain: best.xp - curXp, current: G.plan[dim] === best.k, text: w?.text || '' });
+  }
+  const plans = bestPlans(); G.plans = plans;
+  const keyRows = [['possession', 'Possession'], ['passPct', 'Pass accuracy'], ['ppda', 'Pressing (lower = harder)'], ['fieldTilt', 'Territory (field tilt)'], ['xg', 'xG created'], ['xga', 'xG conceded'], ['bigChancesAgainst', 'Big chances conceded'], ['aerialPct', 'Aerial duels won'], ['xgSetPlayAgainst', 'Set-piece xG conceded'], ['longBallPct', 'Long-ball accuracy']]
+    .filter(([k]) => P[k]).map(([k, l]) => { const r = P[k]; const pos = r.of ? 1 - (r.rank - 1) / (r.of - 1) : 0.5;
+      return `<div class="mg-opp"><span>${l}</span><span class="v">${r.unit === '%' ? `${fmtPlain(r.value, 1)}%` : fmtPlain(r.value, 2)} <span class="faint tiny">lg ${r.unit === '%' ? `${fmtPlain(r.leagueAvg, 1)}%` : fmtPlain(r.leagueAvg, 2)}</span></span><span class="rk-chip">${ordn(r.rank)}</span><div class="mg-bar"><div style="width:${Math.round(pos * 100)}%"></div></div></div>`; }).join('');
+  const dm = ctx.preview.dangerMen || [];
+  return `<div class="section-head"><h2>Match prep: how Spurs should set up</h2><span class="label-analysis">From the data</span></div>
+    <div class="grid two">
+      <div class="panel"><h3 style="margin-top:0">${esc(name)} at a glance</h3><p class="tiny faint" style="margin:0 0 8px">Per match this season · rank among 20 clubs (1st = most, or best for "conceded")</p>${keyRows}
+        ${dm.length ? `<h3>Danger men</h3>${dm.slice(0, 3).map((d) => `<div class="statrow"><span><strong>${esc(d.name)}</strong> <span class="faint tiny">${esc(d.pos)} · ${d.minutes} min</span></span><span class="v">${fmtPlain((d.xg || 0) + (d.xa || 0), 2)}<small>xG+xA</small></span></div>`).join('')}` : ''}</div>
+      <div class="panel"><h3 style="margin-top:0">What the data suggests</h3><p class="tiny faint" style="margin:0 0 8px">Best option in each area, keeping the rest of your plan. Gain = extra expected points (3 for a win, 1 for a draw).</p>
+        ${advice.map((a) => `<div class="mg-adv${a.current ? ' ok' : ''}"><div><strong>${esc(a.label)}: ${esc(a.opt)}</strong> ${a.current ? '<span class="mg-eff"><b class="up">✓ already set</b></span>' : `<span class="mg-eff"><b class="up">+${fmtPlain(a.gain, 2)} pts</b></span> <button class="btn ghost mg-apply" data-dim="${a.dim}" data-v="${a.k}">Use</button>`}</div><p class="tiny" style="margin:2px 0 0">${esc(a.text)}</p></div>`).join('')}</div>
+    </div>
+    <div class="panel section"><h3 style="margin-top:0">Best plans the model found</h3><p class="tiny faint" style="margin:0 0 8px">Every formation and tactic combination tried with the best available XI for each (${(Object.keys(FORMATIONS).length * 1458).toLocaleString()} plans).</p>
+      ${plans.map((r, i) => { const pr = probs(r.ls, r.lo); return `<div class="mg-plan"><div><strong>${i + 1}. ${r.form}</strong> <span class="small muted">${esc(planLabel(r.plan))}</span></div><div class="small">Win ${pr.w}% · draw ${pr.d}% · lose ${pr.l}% · <strong>${fmtPlain(r.xp, 2)} pts</strong> · xG ${fmtPlain(r.ls, 2)}–${fmtPlain(r.lo, 2)}</div><button class="btn ghost mg-useplan" data-i="${i}">Use this plan</button></div>`; }).join('')}
+      <p class="tiny faint">Your current set-up: ${fmtPlain(curXp, 2)} expected points.</p></div>
+    ${ctx.preview.plan?.length ? `<div class="panel section"><h3 style="margin-top:0">Scout's notes</h3><ul class="small" style="margin:0;padding-left:18px">${ctx.preview.plan.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>` : ''}
+    <p class="source">Tactic effects are rules of thumb, sized from ${esc(name)}'s real numbers against the league average (FotMob data via FPL Core Insights). They make the game respond to the opponent; they are not proven effects.</p>`;
 }
 const crestImgCode = (code) => (code ? `<img class="tcrest" src="https://resources.premierleague.com/premierleague/badges/70/t${code}.png" alt="" onerror="this.remove()">` : '');
 
@@ -207,7 +386,8 @@ function drawSetup() {
   const out = G.ctx.squad.filter((p) => p.out);
   document.getElementById('mg-bench').innerHTML = `<h3 style="margin-top:0">Bench (${bench.length})</h3><div class="mg-list">${bench.map((p) => `<div class="mg-row"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} ${tag(p)}${p.r.few ? `<span class="faint tiny"> ${p.minutes} mins</span>` : ''}</span><strong>${p.r.ovr}</strong></div>`).join('')}</div>
     ${out.length ? `<h3>Unavailable (${out.length})</h3><div class="mg-list">${out.map((p) => `<div class="mg-row" style="opacity:.6"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} <span class="tiny" style="color:var(--loss)">${esc(p.news || p.statusLabel || 'Unavailable')}</span></span><strong>—</strong></div>`).join('')}</div>` : ''}`;
-  const { ls, lo, st } = lambdas(G.ctx, xi, G.form, G.press, G.ment);
+  document.getElementById('mg-tactics').innerHTML = tacticsHtml('mg');
+  const { ls, lo, st } = lambdas(G.ctx, xi, G.form, G.plan);
   const pr = probs(ls, lo); const base = G.ctx.next;
   const bar = (v, max) => `<div class="mg-bar"><div style="width:${Math.min(100, (v / max) * 100)}%"></div></div>`;
   document.getElementById('mg-odds').innerHTML = `<h3 style="margin-top:0">Your odds</h3>
@@ -217,7 +397,8 @@ function drawSetup() {
     <div class="statrow"><span>Defence</span><span class="v">${Math.round(st.def)}</span></div>${bar(st.def, 110)}
     <div class="statrow"><span>Expected goals</span><span class="v">${fmtPlain(ls, 2)} – ${fmtPlain(lo, 2)}</span></div></div>`;
   document.getElementById('mg-kick').disabled = G.pick.some((id) => !id);
-  save({ ...load(), form: G.form, xi: G.pick, press: G.press, ment: G.ment });
+  save({ ...load(), form: G.form, xi: G.pick, plan: G.plan });
+  clearTimeout(G.prepT); G.prepT = setTimeout(() => { const el = document.getElementById('mg-prep'); if (el) el.innerHTML = prepHtml(); }, 30);
 }
 const pitchLines = () => '<div class="pl-half"></div><div class="pl-circle"></div><div class="pl-box top"></div><div class="pl-box bottom"></div>';
 
@@ -246,7 +427,12 @@ export function managerAfter() {
   drawSetup();
   const seg = (id, key, after) => document.getElementById(id).addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b) return; G[key] = b.dataset.v; document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute('aria-pressed', x === b)); after?.(); drawSetup(); });
   seg('mg-form', 'form', () => { G.pick = autoPick(FORMATIONS[G.form].slots, G.ctx.avail); });
-  seg('mg-press', 'press'); seg('mg-ment', 'ment');
+  document.getElementById('mg-tactics').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); const g = e.target.closest('[data-dim]'); if (!b || !g) return; G.plan[g.dataset.dim] = b.dataset.v; drawSetup(); });
+  document.getElementById('mg-prep').addEventListener('click', (e) => {
+    const a = e.target.closest('.mg-apply'); if (a) { G.plan[a.dataset.dim] = a.dataset.v; drawSetup(); return; }
+    const u = e.target.closest('.mg-useplan'); if (u && G.plans?.[u.dataset.i]) { const r = G.plans[u.dataset.i]; G.form = r.form; G.plan = { ...r.plan }; G.pick = autoPick(FORMATIONS[G.form].slots, G.ctx.avail);
+      document.querySelectorAll('#mg-form button').forEach((x) => x.setAttribute('aria-pressed', x.dataset.v === G.form)); drawSetup(); document.getElementById('mg-pitch').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  });
   document.getElementById('mg-pitch').addEventListener('click', (e) => { const b = e.target.closest('[data-slot]'); if (b) openPicker(Number(b.dataset.slot)); });
   document.getElementById('mg-auto').addEventListener('click', () => { G.pick = autoPick(FORMATIONS[G.form].slots, G.ctx.avail); drawSetup(); });
   document.getElementById('mg-kick').addEventListener('click', startMatch);
@@ -280,19 +466,19 @@ function step() {
   const mm = m.half === 1 ? Math.min(m.min, 45) : Math.min(m.min, 90);
   const stamp = m.min > (m.half === 1 ? 45 : 90) ? `${m.half === 1 ? 45 : 90}+${m.min - (m.half === 1 ? 45 : 90)}` : String(m.min);
   // fatigue
-  const tire = PRESS[G.press].tire;
+  const E0 = planEffects(G.plan, G.ctx); const tire = E0.tire;
   for (const x of m.xi) if (!x.sentOff) { const played = m.min - x.on; if (played > 55) x.energy = Math.max(0.78, 1 - (played - 55) * 0.0035 * tire); }
   const oppShort = { f: 0.82 ** (11 - m.oppMen), a: 1 / 0.82 ** (11 - m.oppMen) };
-  const { ls, lo } = lambdas(G.ctx, m.xi, G.form, G.press, G.ment, { f: oppShort.f, a: oppShort.a });
+  const { ls, lo } = lambdas(G.ctx, m.xi, G.form, G.plan, { f: oppShort.f, a: oppShort.a });
   // game state: trailing teams push
   const diff = m.score[0] - m.score[1]; const late = mm > 65 ? 1.2 : 1;
   const lS = ls * (diff < 0 ? 1.12 * late : diff > 0 ? 0.92 : 1); const lO = lo * (diff > 0 ? 1.12 * late : diff < 0 ? 0.92 : 1);
-  const possBase = 54 + PRESS[G.press].poss + MENT[G.ment].poss + (ls - lo) * 6;
+  const possBase = 54 + E0.poss + (ls - lo) * 6;
   m.st.poss.push(Math.max(30, Math.min(75, possBase + (rnd() - 0.5) * 16)));
   for (const [side, lam] of [[0, lS], [1, lO]]) {
     const pShot = lam / 0.115 / 90;
     if (rnd() < pShot) shot(side, stamp);
-    if (rnd() < 5 / 90 / 2) { m.st.corners[side]++; }
+    if (rnd() < (side === 0 && G.plan.setp === 'focus' ? 6 : 5) / 90 / 2) { m.st.corners[side]++; }
   }
   // cards and injuries
   for (const side of [0, 1]) if (rnd() < 1.9 / 90) card(side, stamp);
@@ -308,7 +494,8 @@ const onPitch = (list) => list.filter((x) => !x.sentOff && x.player);
 function shot(side, stamp) {
   const m = G.match; const team = side === 0 ? m.xi : m.opp;
   const outfield = onPitch(team).filter((x) => x.player.pos !== 'GK');
-  const shooter = pickW(outfield, (x) => Math.sqrt(Math.max(0, x.player.per90?.xg ?? { DEF: 0.04, MID: 0.12, FWD: 0.3 }[x.player.pos])) + 0.08);
+  const marked = side === 1 ? planEffects(G.plan, G.ctx).marked : null; // a man-marked danger man shoots less
+  const shooter = pickW(outfield, (x) => (Math.sqrt(Math.max(0, x.player.per90?.xg ?? { DEF: 0.04, MID: 0.12, FWD: 0.3 }[x.player.pos])) + 0.08) * (marked && x.player.name === marked ? 0.45 : 1));
   const xg = shotXg(); m.st.shots[side]++; m.st.xg[side] += xg; if (side === 0) shooter.sh++;
   const goal = rnd() < xg; const onT = goal || rnd() < 0.3 + xg * 0.4;
   if (onT) m.st.sot[side]++;
@@ -343,7 +530,7 @@ function finish() {
   const m = G.match; const r = m.score[0] > m.score[1] ? 'W' : m.score[0] < m.score[1] ? 'L' : 'D';
   for (const x of m.xi.concat(m.gone)) { if (!x.player) continue; x.rating += (r === 'W' ? 0.4 : r === 'L' ? -0.4 : 0) + (rnd() - 0.5) * 0.6; if (x.player.pos !== 'GK' && x.player.pos !== 'FWD' && m.score[1] === 0) x.rating += 0.5; x.rating = Math.max(4.5, Math.min(10, x.rating)); }
   const st = load(); const h = st.history || [];
-  h.unshift({ at: new Date().toISOString(), match: G.ctx.f.id, opp: G.ctx.f.opponent, home: G.ctx.f.home, s: m.score, r, form: G.form, press: G.press, ment: G.ment });
+  h.unshift({ at: new Date().toISOString(), match: G.ctx.f.id, opp: G.ctx.f.opponent, home: G.ctx.f.home, s: m.score, r, form: G.form, plan: { ...G.plan } });
   save({ ...st, history: h.slice(0, 50) });
 }
 
@@ -370,7 +557,7 @@ function renderMatch() {
     <div class="panel"><h3 style="margin-top:0">Match stats</h3>
       <div class="mg-st head"><strong>Spurs</strong><span></span><strong>${esc(f.opponent)}</strong></div>
       ${row('Possession %', poss, 100 - poss)}${row('Shots', m.st.shots[0], m.st.shots[1])}${row('On target', m.st.sot[0], m.st.sot[1])}${row('xG', m.st.xg[0], m.st.xg[1], 2)}${row('Corners', m.st.corners[0], m.st.corners[1])}${row('Yellow cards', m.st.yc[0], m.st.yc[1])}
-      <p class="tiny faint" style="margin-top:8px">${esc(G.form)} · ${esc(PRESS[G.press].label)} · ${esc(MENT[G.ment].label)} · subs left ${m.subsLeft}</p></div></div>
+      <p class="tiny faint" style="margin-top:8px">${esc(G.form)} · ${esc(planLabel(G.plan))} · subs left ${m.subsLeft}</p></div></div>
   <p class="source">A game. Each minute the engine draws shots from both teams' expected goals, which start from the site's real forecast and move with your XI, tactics, fatigue, cards and the score. Shooters and creators are weighted by their real xG and xA per 90.</p>`;
   bindMatch();
 }
@@ -379,8 +566,7 @@ function manageHtml() {
   const m = G.match; const used = new Set(m.xi.map((x) => x.player?.id).concat(m.used));
   const bench = G.ctx.avail.filter((p) => !used.has(p.id)).sort((a, b) => b.r.ovr - a.r.ovr);
   return `<section class="panel section mgr-manage"><h3 style="margin-top:0">Team talk</h3>
-    <div class="mgr-ctl"><label class="small muted">Pressing</label><div class="seg" id="mg-press2">${Object.entries(PRESS).map(([k, v]) => `<button data-v="${k}" aria-pressed="${k === G.press}">${v.label}</button>`).join('')}</div></div>
-    <div class="mgr-ctl"><label class="small muted">Mentality</label><div class="seg" id="mg-ment2">${Object.entries(MENT).map(([k, v]) => `<button data-v="${k}" aria-pressed="${k === G.ment}">${v.label}</button>`).join('')}</div></div>
+    <div id="mg-tactics2">${tacticsHtml('mg2')}</div>
     <h3>Substitutions <span class="muted small">(${m.subsLeft} left)</span></h3>
     ${m.subsLeft ? `<p class="small muted" style="margin-top:0">Tap a player to take off, then one to bring on.</p>
     <div class="mgr-subs"><div class="mg-list" id="mg-off">${m.xi.map((x, i) => (x.player && !x.sentOff ? `<button class="mg-row pick${G.subOff === i ? ' on' : ''}" data-off="${i}"><span class="mg-pos ${x.player.pos}">${x.slot.label}</span><span>${esc(x.player.name)}${x.injured ? ' 🩹' : ''}${x.yc ? ' 🟨' : ''}</span><span class="mg-energy" title="Energy"><i style="width:${Math.round(x.energy * 100)}%"></i></span></button>` : '')).join('')}</div>
@@ -393,8 +579,12 @@ function bindMatch() {
   $('mg-pause')?.addEventListener('click', () => { m.paused = !m.paused; G.subOff = undefined; if (!m.paused) tick(); else { clearTimeout(G.timer); renderMatch(); } });
   $('mg-resume')?.addEventListener('click', () => { m.paused = false; G.subOff = undefined; tick(); });
   $('mg-speed')?.addEventListener('click', (e) => { const b = e.target.closest('[data-sp]'); if (!b) return; m.speed = b.dataset.sp === 'skip' ? 'skip' : Number(b.dataset.sp); if (!m.paused) tick(); else renderMatch(); });
-  const tac = (id, key) => $(id)?.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b || G[key] === b.dataset.v) return; G[key] = b.dataset.v; push('tac', m.min, `Instruction from the touchline: ${key === 'press' ? PRESS[G.press].label : MENT[G.ment].label}.`, 0); renderMatch(); });
-  tac('mg-press2', 'press'); tac('mg-ment2', 'ment');
+  $('mg-tactics2')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-v]'); const g = e.target.closest('[data-dim]'); if (!b || !g || G.plan[g.dataset.dim] === b.dataset.v) return;
+    G.plan[g.dataset.dim] = b.dataset.v;
+    const lab = g.dataset.dim === 'mark' ? (b.dataset.v === 'man' ? `man-mark ${planEffects(G.plan, G.ctx).dangerMan?.name}` : 'zonal marking') : `${TACTICS.find((t) => t[0] === g.dataset.dim)[1].toLowerCase()}: ${TACTICS.find((t) => t[0] === g.dataset.dim)[2][b.dataset.v].label}`;
+    push('tac', m.min, `Instruction from the touchline: ${esc(lab)}.`, 0); renderMatch();
+  });
   $('mg-off')?.addEventListener('click', (e) => { const b = e.target.closest('[data-off]'); if (!b) return; G.subOff = Number(b.dataset.off); renderMatch(); });
   $('mg-on')?.addEventListener('click', (e) => {
     const b = e.target.closest('[data-on]'); if (!b || G.subOff === undefined) return;

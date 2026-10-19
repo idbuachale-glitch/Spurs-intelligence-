@@ -29,11 +29,18 @@ export function clubProfiles(leagueMatches, teams) {
       }
       const a = num(m[`${side}_opposition_half`]); const b = num(m[`${other}_opposition_half`]);
       if (a !== null && b !== null && a + b > 0) { t.sums.fieldTilt = (t.sums.fieldTilt || 0) + (a / (a + b)) * 100; t.counts.fieldTilt = (t.counts.fieldTilt || 0) + 1; }
+      // PPDA estimate: opponent passes in their own half per defensive action (tackles won,
+      // interceptions, fouls). ppda = how hard this club presses; ppdaFaced = how hard it gets pressed.
+      const acts = (sd) => { const x = [num(m[`${sd}_tackles_won`]), num(m[`${sd}_interceptions`]), num(m[`${sd}_fouls_committed`])]; return x.every((v) => v !== null) ? x.reduce((p, q) => p + q, 0) : null; };
+      const oppOwn = num(m[`${other}_own_half`]); const myOwn = num(m[`${side}_own_half`]);
+      const addK = (k, v) => { if (v === null || !Number.isFinite(v)) return; t.sums[k] = (t.sums[k] || 0) + v; t.counts[k] = (t.counts[k] || 0) + 1; };
+      if (oppOwn !== null && acts(side)) addK('ppda', oppOwn / acts(side));
+      if (myOwn !== null && acts(other)) addK('ppdaFaced', myOwn / acts(other));
       by.set(code, t);
     }
   }
-  const keys = [...Object.keys(defs), 'fieldTilt'];
-  const lower = new Set(Object.entries(defs).filter(([, d]) => d[2]).map(([k]) => k));
+  const keys = [...Object.keys(defs), 'fieldTilt', 'ppda', 'ppdaFaced'];
+  const lower = new Set([...Object.entries(defs).filter(([, d]) => d[2]).map(([k]) => k), 'ppda']);
   const profiles = new Map();
   for (const t of by.values()) profiles.set(t.code, { code: t.code, matches: t.n, avg: Object.fromEntries(keys.map((k) => [k, t.counts[k] ? round(t.sums[k] / t.counts[k], 2) : null])), rank: {} });
   for (const k of keys) {
@@ -49,6 +56,7 @@ export const PROFILE_LABELS = {
   shotsAgainst: ['Shots conceded per match', ''], bigChances: ['Big chances per match', ''], bigChancesAgainst: ['Big chances conceded', ''], passPct: ['Pass accuracy', '%'],
   xgSetPlay: ['Set-piece xG per match', ''], xgSetPlayAgainst: ['Set-piece xG conceded', ''], touchesOppBox: ['Touches in opposition box', ''], dribbles: ['Successful take-ons', ''],
   longBallPct: ['Long-ball accuracy', '%'], tacklesWon: ['Tackles won', ''], interceptions: ['Interceptions', ''], aerialPct: ['Aerial duels won', '%'], corners: ['Corners', ''],
+  ppda: ['Pressing (PPDA est., lower = harder)', ''], ppdaFaced: ['Pressed by opponents (PPDA faced)', ''],
 };
 
 export function scoutReport({ fixture, opp, teams, fplFixtures, elements, table, clubs, spursId, spursCode, spursNews = [] }) {
