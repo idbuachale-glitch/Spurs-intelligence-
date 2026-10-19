@@ -206,7 +206,7 @@ function drawSetup() {
   const bench = G.ctx.avail.filter((p) => !used.has(p.id)).sort((a, b) => b.r.ovr - a.r.ovr);
   const out = G.ctx.squad.filter((p) => p.out);
   document.getElementById('mg-bench').innerHTML = `<h3 style="margin-top:0">Bench (${bench.length})</h3><div class="mg-list">${bench.map((p) => `<div class="mg-row"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} ${tag(p)}${p.r.few ? `<span class="faint tiny"> ${p.minutes} mins</span>` : ''}</span><strong>${p.r.ovr}</strong></div>`).join('')}</div>
-    ${out.length ? `<p class="small muted" style="margin:10px 0 0">Unavailable: ${out.map((p) => `${esc(p.name)} (${esc(p.statusLabel || 'out')})`).join(', ')}</p>` : ''}`;
+    ${out.length ? `<h3>Unavailable (${out.length})</h3><div class="mg-list">${out.map((p) => `<div class="mg-row" style="opacity:.6"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} <span class="tiny" style="color:var(--loss)">${esc(p.news || p.statusLabel || 'Unavailable')}</span></span><strong>—</strong></div>`).join('')}</div>` : ''}`;
   const { ls, lo, st } = lambdas(G.ctx, xi, G.form, G.press, G.ment);
   const pr = probs(ls, lo); const base = G.ctx.next;
   const bar = (v, max) => `<div class="mg-bar"><div style="width:${Math.min(100, (v / max) * 100)}%"></div></div>`;
@@ -226,9 +226,11 @@ function openPicker(i) {
   const cur = G.pick[i];
   const list = eligibleFor(sl, G.ctx.avail).sort((a, b) => ratingIn(b, sl) - ratingIn(a, sl));
   const strict = G.ctx.avail.some((p) => eligibleStrict(p, sl));
+  const outHere = G.ctx.squad.filter((p) => p.out && eligibleStrict(p, sl));
   const sheet = document.getElementById('mg-sheet');
   sheet.innerHTML = `<div class="mgr-sheet-in"><div class="section-head"><h3 style="margin:0">Pick for ${sl.label}</h3><button class="btn ghost" data-close>Close</button></div>
-    ${strict ? `<p class="small muted" style="margin:0 0 8px">Only players who play ${sl.label} are shown.</p>` : `<p class="small" style="margin:0 0 8px;color:var(--warn)">Nobody available plays ${sl.label} naturally, so the whole ${{ DEF: 'defence', MID: 'midfield', FWD: 'attack' }[sl.pos[0]] || 'squad'} is shown.</p>`}<div class="mg-list">${list.map((p) => { const where = G.pick.indexOf(p.id); return `<button class="mg-row pick${p.id === cur ? ' on' : ''}" data-pid="${p.id}"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} ${tag(p)}${where >= 0 && p.id !== cur ? `<span class="faint tiny"> in XI (${FORMATIONS[G.form].slots[where].label})</span>` : ''}${naturalIn(p, sl) ? '<span class="tiny" style="color:var(--win)"> natural</span>' : fitPen(p, sl) < 0.9 ? '<span class="faint tiny"> out of position</span>' : ''}</span><strong>${ratingIn(p, sl)}</strong></button>`; }).join('')}</div></div>`;
+    ${strict ? `<p class="small muted" style="margin:0 0 8px">Only players who play ${sl.label} are shown.</p>` : `<p class="small" style="margin:0 0 8px;color:var(--warn)">Nobody available plays ${sl.label} naturally, so the whole ${{ DEF: 'defence', MID: 'midfield', FWD: 'attack' }[sl.pos[0]] || 'squad'} is shown.</p>`}<div class="mg-list">${list.map((p) => { const where = G.pick.indexOf(p.id); return `<button class="mg-row pick${p.id === cur ? ' on' : ''}" data-pid="${p.id}"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} ${tag(p)}${where >= 0 && p.id !== cur ? `<span class="faint tiny"> in XI (${FORMATIONS[G.form].slots[where].label})</span>` : ''}${naturalIn(p, sl) ? '<span class="tiny" style="color:var(--win)"> natural</span>' : fitPen(p, sl) < 0.9 ? '<span class="faint tiny"> out of position</span>' : ''}</span><strong>${ratingIn(p, sl)}</strong></button>`; }).join('')}
+      ${outHere.length ? `<p class="small muted" style="margin:12px 0 6px">Can't play this match:</p>${outHere.map((p) => `<div class="mg-row" style="opacity:.55"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} <span class="tiny" style="color:var(--loss)">${esc(p.news || p.statusLabel || 'Unavailable')}</span></span><strong>—</strong></div>`).join('')}` : ''}</div></div>`;
   sheet.hidden = false;
   sheet.onclick = (e) => {
     if (e.target === sheet || e.target.closest('[data-close]')) { sheet.hidden = true; return; }
