@@ -1,4 +1,4 @@
-// Manager mode: pick a formation, XI and tactics from the real Spurs squad and play the
+// Matchday Simulator: pick a formation, XI and tactics from the real Spurs squad and play the
 // next real fixture minute by minute. Ratings come from each player's real per-90 figures
 // against Premier League players in his position; the match engine starts from the site's
 // own expected-goals forecast for the fixture and adjusts it for the manager's choices.
@@ -149,7 +149,7 @@ function lambdas(ctx, xi, form, press, ment, extra = { f: 1, a: 1 }) {
 export async function managerView() {
   if (G) clearTimeout(G.timer);
   const ctx = await context();
-  if (!ctx) return '<h1>Manager mode</h1><div class="empty">There is no upcoming fixture to play right now.</div>';
+  if (!ctx) return '<h1>Matchday Simulator</h1><div class="empty">There is no upcoming fixture to play right now.</div>';
   const saved = load();
   const form = saved.form && FORMATIONS[saved.form] ? saved.form : '4-3-3';
   let pick = Array.isArray(saved.xi) && saved.form === form ? saved.xi.map((id) => (ctx.avail.some((p) => p.id === id) ? id : null)) : null;
@@ -158,7 +158,7 @@ export async function managerView() {
   const f = ctx.f;
   const rec = saved.history || [];
   const wdl = ['W', 'D', 'L'].map((r) => rec.filter((h) => h.r === r).length);
-  return `<div class="section-head"><h1>Manager mode</h1><span class="label-analysis">Game · just for fun</span></div>
+  return `<div class="section-head"><h1>Matchday Simulator</h1><span class="label-analysis">Game · just for fun</span></div>
     <p class="lede">You're the manager. Pick the shape, the XI and the approach for Spurs' next real match, then play it minute by minute. Ratings come from each player's real stats this season; your choices change the odds.</p>
     <section class="panel mgr-fx"><div class="mgr-teams"><span>${crestImgCode(6)}<strong>Spurs</strong></span><span class="muted">${f.home ? 'v' : '@'}</span><span>${crestImgCode(state.meta.teamCodes?.[f.opponentTeamId])}<strong>${esc(f.opponent)}</strong></span></div>
       <p class="small muted" style="margin:6px 0 0">${esc(f.competition)} · ${esc(fmtDate(f.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}, ${esc(fmtTime(f.kickoff))} Bahrain${rec.length ? ` · Your record: <strong>${wdl[0]}W ${wdl[1]}D ${wdl[2]}L</strong>` : ''}</p></section>
@@ -345,7 +345,7 @@ function renderMatch() {
   const all = m.xi.concat(m.gone || []).filter((x) => x.player);
   const motm = m.done ? all.slice().sort((a, b) => b.rating - a.rating)[0] : null;
   const real = m.done && G.ctx.f.score ? G.ctx.f.score : null;
-  v.innerHTML = `<div class="section-head"><h1>Manager mode</h1><span class="label-analysis">Game · just for fun</span></div>
+  v.innerHTML = `<div class="section-head"><h1>Matchday Simulator</h1><span class="label-analysis">Game · just for fun</span></div>
   <section class="panel mgr-score"><div class="mgr-sb"><span>${esc(L[0])}</span><strong>${sc[0]} – ${sc[1]}</strong><span>${esc(L[1])}</span></div><div class="mgr-clock">${clock}${!m.done && !m.paused ? ' <span class="live-pill">LIVE</span>' : ''}</div>
     <div class="mgr-ctrl">${m.done ? '<button class="btn" id="mg-again">Play again</button><a class="btn ghost" href="#/manager" id="mg-new">Change team</a>' : `<button class="btn ghost" id="mg-pause">${m.paused ? '▶ Resume' : '⏸ Pause & manage'}</button><div class="seg" id="mg-speed">${[1, 3, 'skip'].map((sp) => `<button data-sp="${sp}" aria-pressed="${m.speed === sp}">${sp === 'skip' ? 'Skip to end' : `${sp}×`}</button>`).join('')}</div>`}</div></section>
   ${m.paused && !m.done ? manageHtml() : ''}
