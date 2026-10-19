@@ -44,6 +44,15 @@ async function boot() {
   });
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__installEvt = e; document.querySelectorAll('[data-install]').forEach((b) => (b.hidden = false)); });
 }
+// Refresh button: fetch the newest release and data (also clears the offline copy).
+document.getElementById('refresh-btn')?.addEventListener('click', async (e) => {
+  const b = e.currentTarget; b.classList.add('spin'); b.disabled = true;
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration(); if (reg) await reg.update().catch(() => {});
+    if (window.caches) for (const k of await caches.keys()) await caches.delete(k);
+  } catch { /* ignore */ }
+  location.reload();
+});
 // "Add to home screen" help, shown until installed or dismissed.
 function installBanner() {
   const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;

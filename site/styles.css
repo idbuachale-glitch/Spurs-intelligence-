@@ -628,3 +628,16 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .gr-wrap { padding: 10px; }
 .gr-preview { aspect-ratio: 1080 / 1350; max-width: 460px; margin: 0 auto; border-radius: 12px; overflow: hidden; }
 .gr-preview img { width: 100%; height: 100%; display: block; }
+
+/* Refresh button (top right) */
+.refresh-btn { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--cyan); cursor: pointer; }
+.refresh-btn:active { transform: scale(.94); }
+.refresh-btn.spin svg { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.topbar label[for='season'] { margin-left: auto; }
+@media (max-width: 760px) {
+  .topbar .mobile-brand { order: 0; flex: 1; }
+  .topbar .refresh-btn { order: 1; }
+  .topbar .season-select { order: 2; }
+  .topbar .search { order: 3; }
+}
