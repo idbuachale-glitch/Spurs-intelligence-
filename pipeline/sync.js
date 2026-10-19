@@ -21,7 +21,7 @@ import { leaders, roundContext, deservedTable } from './derive/leaguecontext.js'
 import { runLive, attachStoredLive } from './derive/live.js';
 import { weeklyReports } from './derive/weekly.js';
 import * as af from './adapters/apifootball.js';
-import { ratings, expectedGoals, matchProbabilities, simulateSeason } from './derive/simulate.js';
+import { ratings, expectedGoals, matchProbabilities, simulateSeason, priorFromElo, absencesFrom, backtest, PRIOR_MATCHES } from './derive/simulate.js';
 
 const ELEMENT_FIELDS = ['id', 'code', 'first_name', 'second_name', 'web_name', 'known_name', 'team', 'element_type', 'birth_date', 'region', 'squad_number', 'team_join_date',
   'status', 'news', 'news_added', 'chance_of_playing_next_round', 'removed', 'minutes', 'starts', 'goals_scored', 'assists', 'expected_goals', 'expected_assists',
@@ -311,11 +311,26 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
 
   // ---------------- Season simulator & match probabilities ----------------
   try {
-    const R = ratings(detail.leagueMatches || [], teams);
+    // Long-term prior: last season's final Elo ratings (fetched once per season).
+    const priorFile = S(`prior-elo-${season}.json`);
+    let eloPrior = readJson(priorFile, null);
+    if (!eloPrior && fc.enabled()) {
+      const y = Number(season.slice(0, 4)); const prevDir = `${y - 1}-${y}`;
+      for (const path_ of [`data/${prevDir}/By Gameweek/GW38/teams.csv`, `data/${prevDir}/teams.csv`]) {
+        try {
+          const rows = await fc.fetchCsv(path_);
+          const elo = Object.fromEntries(rows.filter((r) => Number(r.elo) > 0).map((r) => [Number(r.code), Number(r.elo)]));
+          if (Object.keys(elo).length >= 15) { eloPrior = { retrievedAt: nowIso, source: path_, elo }; writeJson(priorFile, eloPrior); break; }
+        } catch { /* try the next path */ }
+      }
+    }
+    const prior = priorFromElo(teams, eloPrior?.elo || null);
+    const absences = absencesFrom(boot.elements, teams);
+    const R = ratings(detail.leagueMatches || [], teams, { prior, fplFixtures: fixtures.fixtures, now, absences });
     // Re-simulate only when the table, remaining fixtures or ratings change.
-    const simKey = JSON.stringify([built.table.map((r) => [r.teamId, r.points, r.gd, r.gf]), fixtures.fixtures.filter((f) => !(f.finished || f.finished_provisional)).map((f) => f.id), [...R.ratings].map(([k, v]) => [k, v.att.toFixed(3), v.def.toFixed(3)])]);
+    const simKey = JSON.stringify([built.table.map((r) => [r.teamId, r.points, r.gd, r.gf]), fixtures.fixtures.filter((f) => !(f.finished || f.finished_provisional)).map((f) => f.id), [...R.ratings].map(([k, v]) => [k, v.att.toFixed(3), v.def.toFixed(3)]), 'v2']);
     const simCache = readJson(S('sim-cache.json'), null);
-    const sim = simCache && simCache.key === simKey ? simCache.sim : simulateSeason({ table: built.table, fplFixtures: fixtures.fixtures, teams, R, spursId });
+    const sim = simCache && simCache.key === simKey ? simCache.sim : simulateSeason({ table: built.table, fplFixtures: fixtures.fixtures, teams, R, spursId, now });
     if (!simCache || simCache.key !== simKey) writeJson(S('sim-cache.json'), { key: simKey, sim });
     const predFile = S('predictions.json');
     const preds = readJson(predFile, {});
@@ -331,6 +346,7 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
         win: Math.round(spursWin * 1000) / 10, draw: Math.round(p.draw * 1000) / 10, loss: Math.round(oppWin * 1000) / 10,
         expectedGoals: { spurs: Math.round((nextFx.home ? xg.home : xg.away) * 100) / 100, opp: Math.round((nextFx.home ? xg.away : xg.home) * 100) / 100 },
         likelyScores: p.likelyScores.map((x) => ({ spurs: nextFx.home ? x.h : x.a, opp: nextFx.home ? x.a : x.h, p: x.p })),
+        over25: Math.round(p.over25 * 1000) / 10, btts: Math.round(p.btts * 1000) / 10,
       };
       // Keep the latest pre-kick-off forecast so it can be compared with the result later.
       if (Date.parse(nextFx.kickoff) > now.getTime()) preds[nextFx.id] = { ...next, savedAt: nowIso };
@@ -349,6 +365,22 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
       const xpts = 3 * win + p.draw;
       f.difficulty = { level: xpts >= 1.6 ? 'easy' : xpts >= 1.2 ? 'medium' : 'hard', win: Math.round(win * 100), draw: Math.round(p.draw * 100), loss: Math.round(loss * 100), xpts: Math.round(xpts * 100) / 100 };
     }
+    // Scoreline forecasts for Spurs' next league fixtures (grid rows = Spurs goals, columns = opponent goals).
+    const upcoming = [];
+    for (const f of built.fixtures.filter((x) => x.status === 'SCHEDULED' && !x.friendly && x.opponentTeamId && R.ratings.has(x.opponentTeamId)).slice(0, 6)) {
+      const xg = f.home ? expectedGoals(R, spursId, f.opponentTeamId) : expectedGoals(R, f.opponentTeamId, spursId);
+      if (!xg) continue;
+      const p = matchProbabilities(xg.home, xg.away);
+      const sG = f.home ? p.grid : p.grid[0].map((_, j) => p.grid.map((r) => r[j])); // orient: rows = Spurs goals
+      upcoming.push({ matchId: f.id, opponent: f.opponent, opponentTeamId: f.opponentTeamId, home: f.home, kickoff: f.kickoff, competition: f.competition,
+        win: Math.round((f.home ? p.home : p.away) * 1000) / 10, draw: Math.round(p.draw * 1000) / 10, loss: Math.round((f.home ? p.away : p.home) * 1000) / 10,
+        xg: { spurs: Math.round((f.home ? xg.home : xg.away) * 100) / 100, opp: Math.round((f.home ? xg.away : xg.home) * 100) / 100 },
+        over25: Math.round(p.over25 * 1000) / 10, btts: Math.round(p.btts * 1000) / 10, grid: sG,
+        scores: p.likelyScores.map((x) => ({ spurs: f.home ? x.h : x.a, opp: f.home ? x.a : x.h, p: x.p })),
+        news: { spurs: R.ratings.get(spursId)?.absence || null, opp: R.ratings.get(f.opponentTeamId)?.absence || null } });
+    }
+    let bt = null;
+    try { bt = backtest({ leagueMatches: detail.leagueMatches || [], teams, prior, fplFixtures: fixtures.fixtures }); } catch (err) { log.error('backtest failed', { error: String(err.message || err) }); }
     // Record of past forecasts against actual results.
     const record = [];
     for (const [id, pr] of Object.entries(preds)) {
@@ -363,8 +395,9 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     record.sort((a, b) => String(b.kickoff).localeCompare(String(a.kickoff)));
     writeJson(predFile, preds);
     built.files['simulation.json'] = {
-      season, generatedAt: nowIso, ...sim, next, record,
-      method: 'Ratings from xG created and conceded per match (FotMob data, all league matches), shrunk towards the league average; Poisson goals; remaining league fixtures played out 10,000 times with a fixed seed.',
+      season, generatedAt: nowIso, ...sim, next, record, upcoming, backtest: bt,
+      prior: eloPrior ? { source: eloPrior.source, used: Boolean(prior) } : null,
+      method: `Team strength = last season's final Elo rating (counted as ${PRIOR_MATCHES} matches) blended with this season's xG created and conceded per league match, recent matches weighted more (60-day half-life). Missing players lower a team's rating for the next fortnight. Scores: Poisson goals with the Dixon–Coles low-score correction. The rest of the season is played 10,000 times, each run with slightly different team strengths to reflect uncertainty.`,
       label: 'Probabilities from a simple statistical model, not betting odds. They move after every match as the data changes.',
     };
     ok('simulator', 'Season simulator', { records: { remainingFixtures: sim.remainingFixtures } });

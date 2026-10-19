@@ -1210,7 +1210,16 @@ VIEWS.simulator = async () => {
     return `<g><rect x="${18 + i * 30}" y="${170 - h}" width="22" height="${h}" rx="3" fill="${col}" opacity="${pos === s.position ? 1 : 0.75}"><title>${ordinal(pos)}: ${p}%</title></rect><text x="${29 + i * 30}" y="186" text-anchor="middle">${pos}</text>${p >= 3 ? `<text x="${29 + i * 30}" y="${164 - h}" text-anchor="middle" style="font-size:9px">${Math.round(p)}</text>` : ''}</g>`; }).join('');
   const fc = sim.next;
   return `<div class="section-head"><h1>Season forecast</h1><span class="label-analysis">Re-run after every match</span></div>
-  <p class="muted">The rest of the Premier League season played out ${sim.sims.toLocaleString()} times (${sim.remainingFixtures} fixtures left), based on how well every team creates and prevents chances.</p>
+  <p class="muted">The rest of the Premier League season played out ${sim.sims.toLocaleString()} times (${sim.remainingFixtures} fixtures left), based on each team's long-term strength and how well it creates and prevents chances this season.</p>
+  <details class="panel howto"><summary><strong>How to read this page</strong></summary>
+    <ol class="small">
+      <li><strong>Every team gets a strength rating</strong>: part last season's final rating, part this season's chances created and allowed (xG), with recent games counting more. ${s.priorShare !== null && s.priorShare !== undefined ? `Right now last season counts for about ${Math.round(s.priorShare * 100)}%; that falls as more games are played.` : ''}</li>
+      <li><strong>Injuries count</strong>: a team missing key players is weakened for its next fortnight.</li>
+      <li><strong>Every remaining match is played</strong> using those ratings, ${sim.sims.toLocaleString()} times over, with a little randomness in the ratings each time because we can't know them exactly.</li>
+      <li><strong>The percentages</strong> are how often each outcome happened. "${s.relegation}% relegation" means Spurs finished 18th–20th in about ${Math.round(s.relegation * sim.sims / 100).toLocaleString()} of the ${sim.sims.toLocaleString()} seasons.</li>
+      <li><strong>It updates by itself</strong> whenever a Premier League result comes in (checked every 20 minutes), and when team news changes.</li>
+    </ol>
+    <p class="tiny faint">A model, not betting odds. Football is random: even good forecasts are wrong often on single matches, but should be right over many.</p></details>
   <div class="rank-grid">
     ${tile(`${s.relegation}%`, 'Relegation', 'Finishing 18th–20th', s.relegation >= 25 ? 'var(--loss)' : null)}
     ${tile(`${Math.round((100 - s.relegation) * 10) / 10}%`, 'Survival', 'Finishing 17th or higher')}
@@ -1220,11 +1229,54 @@ VIEWS.simulator = async () => {
   </div>
   <div class="panel section"><h2>Where Spurs finish</h2><div class="chart"><svg viewBox="0 0 620 196" role="img" aria-label="Finishing position probabilities">${bars}</svg></div>
     <div class="legend"><span><i style="background:var(--win)"></i>Europe places</span><span><i style="background:var(--cyan)"></i>Mid-table</span><span><i style="background:var(--loss)"></i>Relegation</span><span>Numbers = % chance</span></div></div>
-  ${fc ? `<section class="section"><h2>Next match: ${fc.home ? 'v' : '@'} ${crestOf(fc.opponent)}${esc(fc.opponent)}</h2>${forecastHtml(fc)}</section>` : ''}
+  ${sim.upcoming?.length ? scorelineHtml(sim.upcoming) : fc ? `<section class="section"><h2>Next match: ${fc.home ? 'v' : '@'} ${crestOf(fc.opponent)}${esc(fc.opponent)}</h2>${forecastHtml(fc)}</section>` : ''}
+  ${trackRecordHtml(sim.backtest)}
   ${sim.record.length ? `<div class="panel section"><h2>Forecast record</h2><div class="table-wrap"><table><thead><tr><th>Match</th><th class="r">W / D / L forecast</th><th class="r">Result</th><th class="r">Chance given</th></tr></thead><tbody>${sim.record.map((r) => `<tr><td>${esc(fmtDate(r.kickoff, { day: 'numeric', month: 'short' }))} ${r.home ? 'v' : '@'} ${crestOf(r.opponent, r.opponentTeamId)}${esc(r.opponent)}</td><td class="r">${r.win} / ${r.draw} / ${r.loss}</td><td class="r">${r.score ? `${r.score.spurs}–${r.score.opp}` : ''} ${resultChip(r.result, true)}</td><td class="r">${r.probOfResult}%</td></tr>`).join('')}</tbody></table></div><p class="source">Forecasts saved before kick-off. Average Brier score ${(sim.record.reduce((a, r) => a + r.brier, 0) / sim.record.length).toFixed(3)} (lower is better; always guessing a third each is 0.667).</p></div>` : '<p class="small muted section">Forecasts are saved before each match from now on, then compared with the result here.</p>'}
   <div class="panel section"><h2>Projected final table</h2><div class="table-wrap"><table class="sim"><thead><tr><th>#</th><th>Club</th><th class="r">Now</th><th class="r">Exp. pts</th><th class="r">Top 4</th><th class="r">Top 6</th><th class="r">Relegation</th></tr></thead><tbody>
     ${sim.teams.map((t, i) => `<tr class="${t.teamId === s.teamId ? 'hl' : ''}"><td>${i + 1}</td><td>${crest(t.teamId)}<span class="cl-l">${esc(t.team)}</span><span class="cl-s">${esc(t.short || t.team)}</span></td><td class="r">${t.points}</td><td class="r"><strong>${t.expectedPoints}</strong></td><td class="r">${t.top4}%</td><td class="r">${t.top6}%</td><td class="r" style="color:${t.relegation >= 30 ? 'var(--loss)' : 'inherit'}">${t.relegation}%</td></tr>`).join('')}</tbody></table></div></div>
   <p class="source">${esc(sim.method)} Home advantage ×${sim.homeAdvantage}; ratings are pulled towards average by the equivalent of ${sim.priorMatches} matches so early-season results don't dominate. ${esc(sim.label)}</p>`;
+};
+
+// Scorelines and fair odds for Spurs' next fixtures (selectable).
+const fairOdds = (p) => (p > 0 ? (100 / p).toFixed(p >= 50 ? 2 : p >= 10 ? 1 : 0) : '—');
+function scorelineHtml(list) {
+  return `<section class="section" id="scorelines"><div class="section-head"><h2>Upcoming matches: scorelines &amp; odds</h2><select class="ctl" id="sc-sel" aria-label="Match">${list.map((u, i) => `<option value="${i}">${esc(fmtDate(u.kickoff, { day: 'numeric', month: 'short' }))} · ${u.home ? 'v' : '@'} ${esc(u.opponent)}</option>`).join('')}</select></div>
+    <div id="sc-body">${scorelineBody(list[0])}</div></section>`;
+}
+function scorelineBody(u) {
+  const max = Math.max(...u.grid.flat());
+  const cell = (p, i, j) => `<td class="${i > j ? 'w' : i < j ? 'l' : 'd'}" style="--a:${(p / max).toFixed(2)}" title="Spurs ${i}–${j} ${esc(u.opponent)}: ${p}% (fair odds ${fairOdds(p)})">${p >= 0.5 ? `${p.toFixed(p >= 10 ? 0 : 1)}` : ''}</td>`;
+  const res = [['Spurs win', u.win, 'w'], ['Draw', u.draw, 'd'], [`${u.opponent} win`, u.loss, 'l']];
+  const fav = res.slice().sort((a, b) => b[1] - a[1])[0][0];
+  const news = [u.news?.spurs && `Spurs without ${u.news.spurs.players.join(', ')}`, u.news?.opp && `${u.opponent} without ${u.news.opp.players.join(', ')}`].filter(Boolean);
+  return `<div class="panel"><div class="sc-head">${u.home ? spursCrest() : crestOf(u.opponent, u.opponentTeamId)}<strong>${u.home ? 'Spurs' : esc(u.opponent)}</strong> v <strong>${u.home ? esc(u.opponent) : 'Spurs'}</strong>${u.home ? crestOf(u.opponent, u.opponentTeamId) : spursCrest()} <span class="small muted">${esc(fmtDate(u.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}, ${esc(fmtTime(u.kickoff))}</span></div>
+    <div class="sc-res">${res.map(([l, p, c]) => `<div class="sc-r ${c}${l === fav ? ' fav' : ''}"><span>${esc(l)}</span><strong>${p}%</strong><small>fair odds ${fairOdds(p)}</small>${l === fav ? '<em>Most likely</em>' : ''}</div>`).join('')}</div>
+    <div class="grid two" style="margin-top:12px">
+      <div><h3 style="margin-top:0">Most likely scores</h3><div class="statlist">${u.scores.map((x, i) => `<div class="statrow"><span>${i === 0 ? '<strong>' : ''}Spurs ${x.spurs}–${x.opp} ${esc(u.opponent)}${i === 0 ? '</strong>' : ''}</span><span class="v">${x.p}%<small>fair odds ${fairOdds(x.p)}</small></span></div>`).join('')}</div>
+        <div class="statlist" style="margin-top:10px"><div class="statrow"><span>Over 2.5 goals</span><span class="v">${u.over25}%<small>under ${Math.round((100 - u.over25) * 10) / 10}%</small></span></div><div class="statrow"><span>Both teams score</span><span class="v">${u.btts}%</span></div>
+        <div class="statrow"><span>Expected goals</span><span class="v">${fmtPlain(u.xg.spurs, 2)}–${fmtPlain(u.xg.opp, 2)}</span></div></div></div>
+      <div><h3 style="margin-top:0">Every scoreline</h3><div class="table-wrap"><table class="sc-grid"><thead><tr><th class="tiny">Spurs ↓ / ${esc((u.opponent || '').split(' ')[0])} →</th>${[0, 1, 2, 3, 4, 5].map((j) => `<th>${j}</th>`).join('')}</tr></thead><tbody>${u.grid.map((r, i) => `<tr><th>${i}</th>${r.map((p, j) => cell(p, i, j)).join('')}</tr>`).join('')}</tbody></table></div>
+        <p class="tiny faint" style="margin:6px 0 0">% chance of each exact score. Green = Spurs win, yellow = draw, red = defeat; darker = more likely.</p></div>
+    </div>
+    ${news.length ? `<p class="small" style="margin:10px 0 0">🩹 Allowed for: ${esc(news.join('; '))}.</p>` : ''}
+    <p class="tiny faint" style="margin:6px 0 0">Fair odds = 1 ÷ the model's chance (decimal odds with no bookmaker margin). The lowest odds are the most likely outcome. For information, not betting advice.</p></div>`;
+}
+function trackRecordHtml(bt) {
+  if (!bt) return '';
+  const name = (id) => state.meta.teamShort?.[id] || '';
+  return `<div class="panel section"><div class="section-head"><h2>How accurate is it?</h2><span class="label-analysis">Tested on ${bt.matches} league matches</span></div>
+    <p class="small" style="margin-top:0">Every Premier League match this season was forecast using only the games played before it, then checked against the real result.</p>
+    <div class="rank-grid bt-grid">
+      <div class="rank-tile"><div class="val">${bt.favouriteRight}%</div><div class="lbl">Right result</div><div class="ctx">the most likely result happened · always backing the home team: ${bt.homeRight}%</div></div>
+      <div class="rank-tile"><div class="val" style="color:${bt.skill > 0 ? 'var(--win)' : 'var(--loss)'}">${bt.skill > 0 ? '+' : ''}${bt.skill}%</div><div class="lbl">Better than guessing</div><div class="ctx">accuracy of the % chances v the league's average results</div></div>
+      <div class="rank-tile"><div class="val">${bt.exactScore}%</div><div class="lbl">Exact score</div><div class="ctx">most likely score was the actual score</div></div>
+    </div>
+    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Latest matches</th><th class="r">Forecast (H / D / A)</th><th class="r">Result</th><th class="r"></th></tr></thead><tbody>${bt.recent.map((x) => `<tr><td>${crest(x.home)}${esc(name(x.home))} v ${crest(x.away)}${esc(name(x.away))}</td><td class="r">${x.p.H} / ${x.p.D} / ${x.p.A}</td><td class="r">${x.score[0]}–${x.score[1]}</td><td class="r">${x.fav === x.outcome ? '<span class="mv-up">✓</span>' : '<span class="mv-down">✗</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="tiny faint" style="margin:6px 0 0">With three possible results, top forecasters get about half right. "Better than guessing" compares the forecast percentages (Brier score) with simply using how often home wins, draws and away wins happen.</p></div>`;
+}
+AFTER.simulator = async () => {
+  const sim = await loadSeason('simulation.json', state.season, { optional: true });
+  document.getElementById('sc-sel')?.addEventListener('change', (e) => { document.getElementById('sc-body').innerHTML = scorelineBody(sim.upcoming[Number(e.target.value)]); });
 };
 
 // ---------------- De Zerbi style tracker ----------------

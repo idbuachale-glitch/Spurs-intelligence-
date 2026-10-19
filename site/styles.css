@@ -641,3 +641,20 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
   .topbar .season-select { order: 2; }
   .topbar .search { order: 3; }
 }
+
+/* Season forecast: how-to, scorelines, odds */
+.howto { margin: 10px 0 14px; } .howto summary { cursor: pointer; color: var(--cyan); } .howto ol { padding-left: 18px; margin: 10px 0 6px; } .howto li { margin-bottom: 6px; }
+.sc-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.sc-res { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sc-r { position: relative; border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; gap: 2px; }
+.sc-r strong { font: 700 1.4rem var(--display); } .sc-r small { color: var(--muted); font-size: .72rem; } .sc-r span { font-size: .8rem; }
+.sc-r.w strong { color: var(--win); } .sc-r.d strong { color: var(--draw); } .sc-r.l strong { color: var(--loss); }
+.sc-r.fav { border-color: var(--line-strong); box-shadow: var(--glow); }
+.sc-r em { position: absolute; top: -9px; right: 8px; font-style: normal; font-size: .62rem; font-weight: 700; background: var(--cyan); color: #04121a; border-radius: 999px; padding: 1px 7px; }
+.sc-grid { border-collapse: separate; border-spacing: 3px; font-size: .78rem; }
+.sc-grid th { color: var(--muted); font-weight: 600; text-align: center; padding: 2px 4px; }
+.sc-grid td { width: 38px; height: 30px; text-align: center; border-radius: 6px; font-weight: 600; color: #fff; }
+.sc-grid td.w { background: rgba(60, 207, 145, calc(.08 + var(--a) * .82)); } .sc-grid td.d { background: rgba(217, 194, 91, calc(.08 + var(--a) * .82)); } .sc-grid td.l { background: rgba(239, 95, 116, calc(.08 + var(--a) * .82)); }
+@media (max-width: 420px) { .sc-grid td { width: 30px; height: 26px; font-size: .7rem; } .sc-r strong { font-size: 1.15rem; } }
+.bt-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important; }
+.sc-grid tbody th { width: 22px; }
