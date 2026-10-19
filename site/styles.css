@@ -658,3 +658,4 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 @media (max-width: 420px) { .sc-grid td { width: 30px; height: 26px; font-size: .7rem; } .sc-r strong { font-size: 1.15rem; } }
 .bt-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important; }
 .sc-grid tbody th { width: 22px; }
+.sc-best { color: var(--text) !important; opacity: .85; } .sc-best b { font-weight: 700; }

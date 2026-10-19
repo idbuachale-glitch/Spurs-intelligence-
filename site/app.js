@@ -1243,6 +1243,8 @@ function scorelineHtml(list) {
   return `<section class="section" id="scorelines"><div class="section-head"><h2>Upcoming matches: scorelines &amp; odds</h2><select class="ctl" id="sc-sel" aria-label="Match">${list.map((u, i) => `<option value="${i}">${esc(fmtDate(u.kickoff, { day: 'numeric', month: 'short' }))} · ${u.home ? 'v' : '@'} ${esc(u.opponent)}</option>`).join('')}</select></div>
     <div id="sc-body">${scorelineBody(list[0])}</div></section>`;
 }
+// Most likely exact score within one result (w = Spurs win, d = draw, l = Spurs defeat).
+const bestIn = (grid, c) => { let b = null; grid.forEach((r, i) => r.forEach((p, j) => { const k = i > j ? 'w' : i < j ? 'l' : 'd'; if (k === c && (!b || p > b.p)) b = { i, j, p }; })); return b; };
 function scorelineBody(u) {
   const max = Math.max(...u.grid.flat());
   const cell = (p, i, j) => `<td class="${i > j ? 'w' : i < j ? 'l' : 'd'}" style="--a:${(p / max).toFixed(2)}" title="Spurs ${i}–${j} ${esc(u.opponent)}: ${p}% (fair odds ${fairOdds(p)})">${p >= 0.5 ? `${p.toFixed(p >= 10 ? 0 : 1)}` : ''}</td>`;
@@ -1250,7 +1252,8 @@ function scorelineBody(u) {
   const fav = res.slice().sort((a, b) => b[1] - a[1])[0][0];
   const news = [u.news?.spurs && `Spurs without ${u.news.spurs.players.join(', ')}`, u.news?.opp && `${u.opponent} without ${u.news.opp.players.join(', ')}`].filter(Boolean);
   return `<div class="panel"><div class="sc-head">${u.home ? spursCrest() : crestOf(u.opponent, u.opponentTeamId)}<strong>${u.home ? 'Spurs' : esc(u.opponent)}</strong> v <strong>${u.home ? esc(u.opponent) : 'Spurs'}</strong>${u.home ? crestOf(u.opponent, u.opponentTeamId) : spursCrest()} <span class="small muted">${esc(fmtDate(u.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}, ${esc(fmtTime(u.kickoff))}</span></div>
-    <div class="sc-res">${res.map(([l, p, c]) => `<div class="sc-r ${c}${l === fav ? ' fav' : ''}"><span>${esc(l)}</span><strong>${p}%</strong><small>fair odds ${fairOdds(p)}</small>${l === fav ? '<em>Most likely</em>' : ''}</div>`).join('')}</div>
+    <div class="sc-res">${res.map(([l, p, c]) => { const b = bestIn(u.grid, c); return `<div class="sc-r ${c}${l === fav ? ' fav' : ''}"><span>${esc(l)}</span><strong>${p}%</strong><small>fair odds ${fairOdds(p)}</small>${b ? `<small class="sc-best">likeliest: <b>${b.i}–${b.j}</b> (${b.p}%)</small>` : ''}${l === fav ? '<em>Most likely</em>' : ''}</div>`; }).join('')}</div>
+    <p class="tiny faint" style="margin:8px 0 0">Why 1–1 tops the list so often: a win can happen in many ways (1–0, 2–1, 2–0…), so its chance is split across lots of scores, while draws pile onto just a few. That makes 1–1 the most common single score in the Premier League even when one side is favourite.</p>
     <div class="grid two" style="margin-top:12px">
       <div><h3 style="margin-top:0">Most likely scores</h3><div class="statlist">${u.scores.map((x, i) => `<div class="statrow"><span>${i === 0 ? '<strong>' : ''}Spurs ${x.spurs}–${x.opp} ${esc(u.opponent)}${i === 0 ? '</strong>' : ''}</span><span class="v">${x.p}%<small>fair odds ${fairOdds(x.p)}</small></span></div>`).join('')}</div>
         <div class="statlist" style="margin-top:10px"><div class="statrow"><span>Over 2.5 goals</span><span class="v">${u.over25}%<small>under ${Math.round((100 - u.over25) * 10) / 10}%</small></span></div><div class="statrow"><span>Both teams score</span><span class="v">${u.btts}%</span></div>
