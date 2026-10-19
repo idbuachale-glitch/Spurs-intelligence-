@@ -20,6 +20,8 @@ import { STATS, RATES, UNAVAILABLE, NOW_AVAILABLE, POS_LABEL } from './derive/st
 import { leaders, roundContext, deservedTable } from './derive/leaguecontext.js';
 import { runLive, attachStoredLive } from './derive/live.js';
 import { weeklyReports } from './derive/weekly.js';
+import * as espn from './adapters/espn.js';
+import { lineupEffect, teamIdFor } from './derive/lineups.js';
 import * as af from './adapters/apifootball.js';
 import { ratings, expectedGoals, matchProbabilities, simulateSeason, priorFromElo, absencesFrom, backtest, PRIOR_MATCHES } from './derive/simulate.js';
 
@@ -327,10 +329,43 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     const prior = priorFromElo(teams, eloPrior?.elo || null);
     const absences = absencesFrom(boot.elements, teams);
     const R = ratings(detail.leagueMatches || [], teams, { prior, fplFixtures: fixtures.fixtures, now, absences });
+
+    // ---- Confirmed line-ups (match day): fetched from 100 minutes before kick-off ----
+    const luDir = S('lineups');
+    const overrides = new Map(); const lineupInfo = new Map(); // key "homeId-awayId"
+    const windowFx = fixtures.fixtures.filter((f) => f.kickoff_time && !(f.finished || f.finished_provisional) && Math.abs(Date.parse(f.kickoff_time) - now.getTime()) < 100 * 60e3 || (f.kickoff_time && now.getTime() - Date.parse(f.kickoff_time) < 3 * 3600e3 && now.getTime() > Date.parse(f.kickoff_time)));
+    // Spurs cup ties too (league code from the competition name).
+    const cupFx = built.fixtures.filter((f) => f.kickoff && f.competition !== 'Premier League' && !f.friendly && espn.LEAGUES[f.competition] && Math.abs(Date.parse(f.kickoff) - now.getTime()) < 100 * 60e3);
+    if (espn.enabled() && (windowFx.length || cupFx.length)) {
+      try {
+        const want = [...windowFx.map((f) => ({ key: `${num(f.team_h)}-${num(f.team_a)}`, h: num(f.team_h), a: num(f.team_a), ko: f.kickoff_time, league: 'eng.1' })),
+          ...cupFx.map((f) => ({ key: `cup-${f.id}`, h: f.home ? spursId : null, a: f.home ? null : spursId, ko: f.kickoff, league: espn.LEAGUES[f.competition], fixtureId: f.id }))];
+        const boards = new Map();
+        for (const w of want) {
+          const file = path.join(luDir, `${w.key}-${w.ko.slice(0, 10)}.json`);
+          let lu = readJson(file, null);
+          if (!lu) {
+            const ymd = w.ko.slice(0, 10).replace(/-/g, '');
+            const bk = `${w.league}-${ymd}`;
+            if (!boards.has(bk)) boards.set(bk, await espn.scoreboard(w.league, ymd).catch(() => []));
+            const ev = boards.get(bk).find((e) => (w.h === null || teamIdFor(e.home, teams) === w.h) && (w.a === null || teamIdFor(e.away, teams) === w.a) && (w.h !== null || w.a !== null));
+            if (!ev) continue;
+            const got = await espn.lineups(w.league, ev.id).catch(() => null);
+            if (!got) continue;
+            lu = { retrievedAt: nowIso, espnEvent: ev.id, ...got }; writeJson(file, lu);
+          }
+          const hE = w.h !== null ? lineupEffect(lu.home, w.h, boot.elements) : null; const aE = w.a !== null ? lineupEffect(lu.away, w.a, boot.elements) : null;
+          if (hE && aE) overrides.set(w.key, { home: hE, away: aE });
+          lineupInfo.set(w.key, { retrievedAt: lu.retrievedAt, home: { ...lu.home, effect: hE }, away: { ...lu.away, effect: aE } });
+        }
+        ok('espn', espn.label, { records: { lineupsConfirmed: lineupInfo.size } });
+      } catch (err) { fail('espn', espn.label, err); }
+    }
+    const ovFor = (homeId, awayId) => overrides.get(`${homeId}-${awayId}`) || null;
     // Re-simulate only when the table, remaining fixtures or ratings change.
-    const simKey = JSON.stringify([built.table.map((r) => [r.teamId, r.points, r.gd, r.gf]), fixtures.fixtures.filter((f) => !(f.finished || f.finished_provisional)).map((f) => f.id), [...R.ratings].map(([k, v]) => [k, v.att.toFixed(3), v.def.toFixed(3)]), 'v2']);
+    const simKey = JSON.stringify([built.table.map((r) => [r.teamId, r.points, r.gd, r.gf]), fixtures.fixtures.filter((f) => !(f.finished || f.finished_provisional)).map((f) => f.id), [...R.ratings].map(([k, v]) => [k, v.att.toFixed(3), v.def.toFixed(3)]), 'v2', [...overrides.keys()]]);
     const simCache = readJson(S('sim-cache.json'), null);
-    const sim = simCache && simCache.key === simKey ? simCache.sim : simulateSeason({ table: built.table, fplFixtures: fixtures.fixtures, teams, R, spursId, now });
+    const sim = simCache && simCache.key === simKey ? simCache.sim : simulateSeason({ table: built.table, fplFixtures: fixtures.fixtures, teams, R, spursId, now, overrides });
     if (!simCache || simCache.key !== simKey) writeJson(S('sim-cache.json'), { key: simKey, sim });
     const predFile = S('predictions.json');
     const preds = readJson(predFile, {});
@@ -338,8 +373,13 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     let next = null;
     if (nextFx && nextFx.opponentTeamId && R.ratings.has(nextFx.opponentTeamId)) {
       const neutral = nextFx.competition !== 'Premier League' && /final/i.test(nextFx.competition);
-      const xg = nextFx.home ? expectedGoals(R, spursId, nextFx.opponentTeamId, neutral) : expectedGoals(R, nextFx.opponentTeamId, spursId, neutral);
+      const hId = nextFx.home ? spursId : nextFx.opponentTeamId; const aId = nextFx.home ? nextFx.opponentTeamId : spursId;
+      const ov = ovFor(hId, aId);
+      const xg = expectedGoals(R, hId, aId, neutral, ov);
       const p = matchProbabilities(xg.home, xg.away);
+      let early = null;
+      if (ov) { const x0 = expectedGoals(R, hId, aId, neutral); const p0 = matchProbabilities(x0.home, x0.away); early = { win: Math.round((nextFx.home ? p0.home : p0.away) * 1000) / 10, draw: Math.round(p0.draw * 1000) / 10, loss: Math.round((nextFx.home ? p0.away : p0.home) * 1000) / 10, expectedGoals: { spurs: Math.round((nextFx.home ? x0.home : x0.away) * 100) / 100, opp: Math.round((nextFx.home ? x0.away : x0.home) * 100) / 100 } }; }
+      const lu = lineupInfo.get(`${hId}-${aId}`) || lineupInfo.get(`cup-${nextFx.id}`) || null;
       const spursWin = nextFx.home ? p.home : p.away; const oppWin = nextFx.home ? p.away : p.home;
       next = {
         matchId: nextFx.id, opponent: nextFx.opponent, home: nextFx.home, kickoff: nextFx.kickoff, competition: nextFx.competition,
@@ -347,18 +387,20 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
         expectedGoals: { spurs: Math.round((nextFx.home ? xg.home : xg.away) * 100) / 100, opp: Math.round((nextFx.home ? xg.away : xg.home) * 100) / 100 },
         likelyScores: p.likelyScores.map((x) => ({ spurs: nextFx.home ? x.h : x.a, opp: nextFx.home ? x.a : x.h, p: x.p })),
         over25: Math.round(p.over25 * 1000) / 10, btts: Math.round(p.btts * 1000) / 10,
+        lineupsConfirmed: Boolean(ov), early,
+        lineups: lu ? { retrievedAt: lu.retrievedAt, spurs: nextFx.home ? lu.home : lu.away, opp: nextFx.home ? lu.away : lu.home } : null,
       };
       // Keep the latest pre-kick-off forecast so it can be compared with the result later.
       if (Date.parse(nextFx.kickoff) > now.getTime()) preds[nextFx.id] = { ...next, savedAt: nowIso };
       const mf = built.files[`matches/${nextFx.id}.json`];
-      if (mf) { mf.forecast = next; if (mf.preview) mf.preview.forecast = next; }
+      if (mf) { mf.forecast = next; if (mf.preview) mf.preview.forecast = next; if (next.lineups) mf.lineups = next.lineups; }
     }
     // Difficulty for every upcoming match against a rated (Premier League) opponent:
     // expected points for Spurs from the same model (3 × win% + draw%).
     for (const f of built.fixtures) {
       if (f.status !== 'SCHEDULED' || f.friendly || !f.opponentTeamId || !R.ratings.has(f.opponentTeamId) || !R.ratings.has(spursId)) continue;
       const neutral = f.competition !== 'Premier League' && /final/i.test(f.competition);
-      const xg = f.home ? expectedGoals(R, spursId, f.opponentTeamId, neutral) : expectedGoals(R, f.opponentTeamId, spursId, neutral);
+      const xg = f.home ? expectedGoals(R, spursId, f.opponentTeamId, neutral, ovFor(spursId, f.opponentTeamId)) : expectedGoals(R, f.opponentTeamId, spursId, neutral, ovFor(f.opponentTeamId, spursId));
       if (!xg) continue;
       const p = matchProbabilities(xg.home, xg.away);
       const win = f.home ? p.home : p.away; const loss = f.home ? p.away : p.home;
@@ -368,7 +410,8 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     // Scoreline forecasts for Spurs' next league fixtures (grid rows = Spurs goals, columns = opponent goals).
     const upcoming = [];
     for (const f of built.fixtures.filter((x) => x.status === 'SCHEDULED' && !x.friendly && x.opponentTeamId && R.ratings.has(x.opponentTeamId)).slice(0, 6)) {
-      const xg = f.home ? expectedGoals(R, spursId, f.opponentTeamId) : expectedGoals(R, f.opponentTeamId, spursId);
+      const ovU = f.home ? ovFor(spursId, f.opponentTeamId) : ovFor(f.opponentTeamId, spursId);
+      const xg = f.home ? expectedGoals(R, spursId, f.opponentTeamId, false, ovU) : expectedGoals(R, f.opponentTeamId, spursId, false, ovU);
       if (!xg) continue;
       const p = matchProbabilities(xg.home, xg.away);
       const sG = f.home ? p.grid : p.grid[0].map((_, j) => p.grid.map((r) => r[j])); // orient: rows = Spurs goals
@@ -377,7 +420,8 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
         xg: { spurs: Math.round((f.home ? xg.home : xg.away) * 100) / 100, opp: Math.round((f.home ? xg.away : xg.home) * 100) / 100 },
         over25: Math.round(p.over25 * 1000) / 10, btts: Math.round(p.btts * 1000) / 10, grid: sG,
         scores: p.likelyScores.map((x) => ({ spurs: f.home ? x.h : x.a, opp: f.home ? x.a : x.h, p: x.p })),
-        news: { spurs: R.ratings.get(spursId)?.absence || null, opp: R.ratings.get(f.opponentTeamId)?.absence || null } });
+        news: ovU ? null : { spurs: R.ratings.get(spursId)?.absence || null, opp: R.ratings.get(f.opponentTeamId)?.absence || null },
+        lineupsConfirmed: Boolean(ovU), early: ovU && next && next.matchId === f.id ? next.early : null });
     }
     let bt = null;
     try { bt = backtest({ leagueMatches: detail.leagueMatches || [], teams, prior, fplFixtures: fixtures.fixtures }); } catch (err) { log.error('backtest failed', { error: String(err.message || err) }); }

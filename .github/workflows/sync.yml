@@ -3,7 +3,7 @@ name: Sync data and publish
 on:
   schedule:
     - cron: '7,27,47 * * * *'   # every 20 minutes (off the hour to avoid GitHub's busiest minutes)
-    - cron: '2,12,17,22,32,37,42,52,57 * * * *'   # extra 5-minute runs; only proceed during a Spurs match
+    - cron: '2,12,17,22,32,37,42,52,57 * * * *'   # extra 5-minute runs; only proceed from 100 min before a Spurs match (line-ups) to full time
   workflow_dispatch:
     inputs:
       force:
@@ -37,7 +37,7 @@ jobs:
             node -e '
               const fs=require("fs");const cur=JSON.parse(fs.readFileSync("site/data/seasons.json")).current;
               const fx=JSON.parse(fs.readFileSync(`site/data/seasons/${cur}/fixtures.json`)).fixtures;
-              const now=Date.now();const live=fx.some(f=>f.kickoff&&!f.friendly&&(now-Date.parse(f.kickoff))/60000>=-5&&(now-Date.parse(f.kickoff))/60000<=155);
+              const now=Date.now();const live=fx.some(f=>f.kickoff&&!f.friendly&&(now-Date.parse(f.kickoff))/60000>=-100&&(now-Date.parse(f.kickoff))/60000<=155);
               process.stdout.write(live?"go=1":"go=0");' >> "$GITHUB_OUTPUT"
           else echo "go=1" >> "$GITHUB_OUTPUT"; fi
 

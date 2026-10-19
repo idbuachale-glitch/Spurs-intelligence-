@@ -834,6 +834,7 @@ VIEWS.match = async (id) => {
     <div class="hero-meta"><span>${f.home ? 'Home' : 'Away'}${f.venueName ? ` · ${esc(f.venueName)}` : ''}</span>${f.kickoffHistory?.length ? `<span>Rescheduled (was ${esc(fmtDateTime(f.kickoffHistory[f.kickoffHistory.length - 1].was))})</span>` : ''}${f.verification ? `<span>Score ${f.verification.agrees ? 'confirmed' : 'differs'} by ${esc(f.verification.source)}</span>` : ''}</div></section>
     ${shareButtonHtml(m)}
   ${livePanel(m)}
+  ${lineupsPanel(m)}
   ${m.preview ? scoutHtml(m.preview, f) : ''}
   <div class="grid two section" ${f.score ? '' : 'hidden'}>
     <div class="panel"><h2>Key events</h2>
@@ -943,9 +944,22 @@ function pressTransitionsHtml(team, adv) {
     <p class="source">PPDA (passes per defensive action) estimate = opponent passes in their own half ÷ Spurs tackles won, interceptions and fouls, across the whole pitch (the standard version counts only actions in the opponent's 60% of the pitch, which needs paid location data). FotMob match data via FPL Core Insights.</p></section>`;
 }
 
+// Confirmed starting XIs (ESPN feed), with who is missing from each side's usual team.
+function lineupsPanel(m) {
+  const lu = m.lineups; if (!lu?.spurs?.starters) return '';
+  const f = m.fixture;
+  const col = (name, side) => `<div><h3 style="margin-top:0">${name === 'Spurs' ? spursCrest() : oc(f)}${esc(name)} <span class="muted small">${esc(side.formation || '')}</span></h3>
+    <ol class="lu-list">${side.starters.map((p) => `<li><span class="mg-pos ${({ G: 'GK', GK: 'GK', D: 'DEF', CB: 'DEF', LB: 'DEF', RB: 'DEF', M: 'MID', DM: 'MID', CM: 'MID', AM: 'MID', F: 'FWD', FW: 'FWD', ST: 'FWD', LW: 'FWD', RW: 'FWD' })[p.pos] || ''}">${esc(p.pos || '')}</span>${esc(p.name)}${p.usual === false && p.matched ? ' <span class="tiny" style="color:var(--warn)">rotated in</span>' : ''}</li>`).join('')}</ol>
+    ${side.effect?.missingUsual?.length ? `<p class="tiny faint" style="margin:6px 0 0">Not starting from the usual XI: ${esc(side.effect.missingUsual.join(', '))}</p>` : ''}</div>`;
+  return `<section class="panel section"><div class="section-head"><h2>Confirmed line-ups</h2><span class="label-analysis">✓ Forecasts updated</span></div>
+    <div class="grid two">${col('Spurs', lu.spurs)}${lu.opp ? col(f.opponent, lu.opp) : ''}</div>
+    <p class="source">Starting XIs from ESPN's match feed, retrieved ${esc(fmtTime(lu.retrievedAt))} Bahrain. Forecasts, the Season forecast and the Matchday Simulator now use these teams.</p></section>`;
+}
+
 function forecastHtml(fc) {
   const bar = `<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin:10px 0 6px"><div style="width:${fc.win}%;background:var(--win)"></div><div style="width:${fc.draw}%;background:var(--draw)"></div><div style="width:${fc.loss}%;background:var(--loss)"></div></div>`;
-  return `<div class="panel section"><div class="section-head"><h3>Match forecast</h3><span class="label-analysis">Model probability</span></div>
+  return `<div class="panel section"><div class="section-head"><h3>${fc.lineupsConfirmed ? 'Final forecast' : 'Match forecast'}</h3><span class="label-analysis">${fc.lineupsConfirmed ? '✓ Line-ups confirmed' : 'Early forecast · updates when line-ups are confirmed'}</span></div>
+    ${fc.lineupsConfirmed && fc.early ? `<p class="small" style="margin:0 0 6px">Before line-ups: Spurs win ${fc.early.win}% · draw ${fc.early.draw}% · lose ${fc.early.loss}% → now <strong>${fc.win}% · ${fc.draw}% · ${fc.loss}%</strong></p>` : ''}
     <div class="rank-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:8px"><div class="rank-tile" style="padding:12px"><div class="val" style="color:var(--win);font-size:1.5rem">${fc.win}%</div><div class="lbl">Spurs win</div></div><div class="rank-tile" style="padding:12px"><div class="val" style="color:var(--draw);font-size:1.5rem">${fc.draw}%</div><div class="lbl">Draw</div></div><div class="rank-tile" style="padding:12px"><div class="val" style="color:var(--loss);font-size:1.5rem">${fc.loss}%</div><div class="lbl">${esc(fc.opponent)} win</div></div></div>${bar}
     <p class="small muted">Expected goals: Spurs ${fc.expectedGoals.spurs} – ${fc.expectedGoals.opp} ${esc(fc.opponent)}. Most likely scores: ${fc.likelyScores.slice(0, 3).map((x) => `${x.spurs}–${x.opp} (${x.p}%)`).join(', ')}.</p>
     <p class="tiny faint">From a simple model of both teams' chance creation and concession this season. Not betting odds. <a href="#/simulator">How it works</a></p></div>`;
@@ -1251,7 +1265,7 @@ function scorelineBody(u) {
   const res = [['Spurs win', u.win, 'w'], ['Draw', u.draw, 'd'], [`${u.opponent} win`, u.loss, 'l']];
   const fav = res.slice().sort((a, b) => b[1] - a[1])[0][0];
   const news = [u.news?.spurs && `Spurs without ${u.news.spurs.players.join(', ')}`, u.news?.opp && `${u.opponent} without ${u.news.opp.players.join(', ')}`].filter(Boolean);
-  return `<div class="panel"><div class="sc-head">${u.home ? spursCrest() : crestOf(u.opponent, u.opponentTeamId)}<strong>${u.home ? 'Spurs' : esc(u.opponent)}</strong> v <strong>${u.home ? esc(u.opponent) : 'Spurs'}</strong>${u.home ? crestOf(u.opponent, u.opponentTeamId) : spursCrest()} <span class="small muted">${esc(fmtDate(u.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}, ${esc(fmtTime(u.kickoff))}</span></div>
+  return `${u.lineupsConfirmed ? `<div class="banner info" style="margin-bottom:8px">✓ <strong>Line-ups confirmed</strong>: this forecast uses both real XIs.${u.early ? ` Before line-ups: Spurs win ${u.early.win}% · draw ${u.early.draw}% · lose ${u.early.loss}%.` : ''}</div>` : '<p class="tiny faint" style="margin:0 0 6px">Early forecast: updates automatically when the line-ups are confirmed (about an hour before kick-off).</p>'}<div class="panel"><div class="sc-head">${u.home ? spursCrest() : crestOf(u.opponent, u.opponentTeamId)}<strong>${u.home ? 'Spurs' : esc(u.opponent)}</strong> v <strong>${u.home ? esc(u.opponent) : 'Spurs'}</strong>${u.home ? crestOf(u.opponent, u.opponentTeamId) : spursCrest()} <span class="small muted">${esc(fmtDate(u.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}, ${esc(fmtTime(u.kickoff))}</span></div>
     <div class="sc-res">${res.map(([l, p, c]) => { const b = bestIn(u.grid, c); return `<div class="sc-r ${c}${l === fav ? ' fav' : ''}"><span>${esc(l)}</span><strong>${p}%</strong><small>fair odds ${fairOdds(p)}</small>${b ? `<small class="sc-best">likeliest: <b>${b.i}–${b.j}</b> (${b.p}%)</small>` : ''}${l === fav ? '<em>Most likely</em>' : ''}</div>`; }).join('')}</div>
     <p class="tiny faint" style="margin:8px 0 0">Why 1–1 tops the list so often: a win can happen in many ways (1–0, 2–1, 2–0…), so its chance is split across lots of scores, while draws pile onto just a few. That makes 1–1 the most common single score in the Premier League even when one side is favourite.</p>
     <div class="grid two" style="margin-top:12px">

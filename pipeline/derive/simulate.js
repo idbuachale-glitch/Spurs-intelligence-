@@ -100,11 +100,15 @@ export function absencesFrom(elements, teams) {
   return out;
 }
 
-export function expectedGoals(R, homeId, awayId, neutral = false) {
+// ov: confirmed line-up multipliers for this fixture ({ home: {attMult, defMult}, away: {...} });
+// when present they replace the injury estimate for both sides.
+export function expectedGoals(R, homeId, awayId, neutral = false, ov = null) {
   const h = R.ratings.get(homeId); const a = R.ratings.get(awayId);
   if (!h || !a) return null;
   const adv = neutral ? 1 : (R.homeAdv || HOME_ADV_PRIOR);
-  return { home: R.leagueAvg * h.att * a.def * adv, away: (R.leagueAvg * a.att * h.def) / adv };
+  const hA = ov ? h.baseAtt * ov.home.attMult : h.att; const hD = ov ? h.baseDef * ov.home.defMult : h.def;
+  const aA = ov ? a.baseAtt * ov.away.attMult : a.att; const aD = ov ? a.baseDef * ov.away.defMult : a.def;
+  return { home: R.leagueAvg * hA * aD * adv, away: (R.leagueAvg * aA * hD) / adv };
 }
 
 const pois = (k, l) => { let p = Math.exp(-l); for (let i = 1; i <= k; i++) p *= l / i; return p; };
@@ -136,7 +140,7 @@ function sampleScore(lh, la, r) {
   return [poisSample(lh, r), poisSample(la, r)];
 }
 
-export function simulateSeason({ table, fplFixtures, teams, R, spursId, now = new Date() }) {
+export function simulateSeason({ table, fplFixtures, teams, R, spursId, now = new Date(), overrides = new Map() }) {
   const remaining = fplFixtures.filter((f) => !(f.finished || f.finished_provisional));
   const seedStr = `${remaining.length}-${table.map((r) => `${r.teamId}:${r.points}:${r.gd}`).join(',')}`;
   let seed = 0; for (const c of seedStr) seed = (seed * 31 + c.charCodeAt(0)) >>> 0;
@@ -145,7 +149,7 @@ export function simulateSeason({ table, fplFixtures, teams, R, spursId, now = ne
   const posCount = new Map(ids.map((id) => [id, new Array(ids.length).fill(0)]));
   const ptsSum = new Map(ids.map((id) => [id, 0]));
   const soon = now.getTime() + 14 * 86400e3; // team news applies to the next fortnight
-  const fx = remaining.map((f) => ({ h: num(f.team_h), a: num(f.team_a), news: f.kickoff_time && Date.parse(f.kickoff_time) < soon })).filter((f) => R.ratings.has(f.h) && R.ratings.has(f.a));
+  const fx = remaining.map((f) => ({ h: num(f.team_h), a: num(f.team_a), news: f.kickoff_time && Date.parse(f.kickoff_time) < soon, ov: overrides.get(`${num(f.team_h)}-${num(f.team_a)}`) || null })).filter((f) => R.ratings.has(f.h) && R.ratings.has(f.a));
   const base = new Map(table.map((t) => [t.teamId, { pts: t.points, gd: t.gd, gf: t.gf }]));
   const adv = R.homeAdv || HOME_ADV_PRIOR;
   for (let s = 0; s < SIMS; s++) {
@@ -154,7 +158,9 @@ export function simulateSeason({ table, fplFixtures, teams, R, spursId, now = ne
     const st = new Map([...base].map(([k, v]) => [k, { ...v }]));
     for (const f of fx) {
       const H = str.get(f.h); const A = str.get(f.a);
-      const lh = R.leagueAvg * (f.news ? H.attN : H.att) * (f.news ? A.defN : A.def) * adv; const la = (R.leagueAvg * (f.news ? A.attN : A.att) * (f.news ? H.defN : H.def)) / adv;
+      let lh; let la;
+      if (f.ov) { lh = R.leagueAvg * H.att * f.ov.home.attMult * A.def * f.ov.away.defMult * adv; la = (R.leagueAvg * A.att * f.ov.away.attMult * H.def * f.ov.home.defMult) / adv; }
+      else { lh = R.leagueAvg * (f.news ? H.attN : H.att) * (f.news ? A.defN : A.def) * adv; la = (R.leagueAvg * (f.news ? A.attN : A.att) * (f.news ? H.defN : H.def)) / adv; }
       const [hg, ag] = sampleScore(lh, la, r);
       const SH = st.get(f.h); const SA = st.get(f.a);
       SH.gd += hg - ag; SA.gd += ag - hg; SH.gf += hg; SA.gf += ag;

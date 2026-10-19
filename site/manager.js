@@ -247,7 +247,26 @@ async function context() {
   const baseXi = autoPick(FORMATIONS['4-3-3'].slots, avail).map((id, i) => ({ player: avail.find((p) => p.id === id), slot: FORMATIONS['4-3-3'].slots[i] }));
   const mf = await loadSeason(`matches/${f.id}.json`, state.season, { optional: true });
   const preview = mf?.preview || null;
-  return { f, next, base, squad, avail, oppXi, baseStr: strength(baseXi), preview, opp: oppProfile(preview) };
+  // Confirmed line-ups: the real XI is loaded and locked.
+  const lu = mf?.lineups || (next && next.matchId === f.id ? next.lineups : null);
+  let lock = null;
+  if (lu?.spurs?.starters?.length >= 11) {
+    const nrm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+    const find = (pool, n) => pool.find((p) => nrm(p.name) === nrm(n) || nrm(p.full) === nrm(n) || (nrm(n).endsWith(nrm(p.name)) && nrm(p.name).length > 3));
+    const starters = lu.spurs.starters.map((x) => find(squad, x.name)).filter(Boolean);
+    const fs = String(lu.spurs.formation || '').replace(/[^0-9-]/g, '');
+    const lockForm = FORMATIONS[fs] ? fs : fs.startsWith('3') ? '3-4-3' : fs.startsWith('5') ? '5-3-2' : fs.split('-').length === 4 ? '4-2-3-1' : '4-3-3';
+    if (starters.length >= 9) {
+      const pool = starters.concat(avail.filter((p) => !starters.includes(p)).slice(0, 0));
+      const lockPick = autoPick(FORMATIONS[lockForm].slots, pool.length >= 11 ? pool : pool.concat(avail.filter((p) => !pool.includes(p))));
+      const oppStart = (lu.opp?.starters || []).map((x) => find(oppAll, x.name)).filter(Boolean);
+      if (oppStart.length >= 9) { oppXi.splice(0, oppXi.length, ...oppStart, ...oppXi.filter((p) => !oppStart.includes(p)).slice(0, 11 - oppStart.length)); }
+      lock = { form: lockForm, pick: lockPick, formation: lu.spurs.formation, oppFormation: lu.opp?.formation || null, at: lu.retrievedAt, matched: starters.length };
+    }
+  }
+  const realXi = lock ? lock.pick.map((id, i) => ({ player: avail.find((p) => p.id === id) || squad.find((p) => p.id === id), slot: FORMATIONS[lock.form].slots[i] })) : null;
+  // The forecast already uses the real XI, so it becomes the baseline (no double counting).
+  return { f, next, base, squad, avail: lock ? avail.concat(squad.filter((p) => lock.pick.includes(p.id) && !avail.includes(p))) : avail, oppXi, baseStr: strength(realXi || baseXi), preview, opp: oppProfile(preview), lock };
 }
 
 function lambdas(ctx, xi, form, plan, extra = { f: 1, a: 1 }) {
@@ -263,11 +282,11 @@ export async function managerView() {
   const ctx = await context();
   if (!ctx) return '<h1>Matchday Simulator</h1><div class="empty">There is no upcoming fixture to play right now.</div>';
   const saved = load();
-  const form = saved.form && FORMATIONS[saved.form] ? saved.form : '4-3-3';
-  let pick = Array.isArray(saved.xi) && saved.form === form ? saved.xi.map((id, i) => { const p = ctx.avail.find((q) => q.id === id); return p && eligibleFor(FORMATIONS[form].slots[i], ctx.avail).includes(p) ? id : null; }) : null;
+  const form = ctx.lock ? ctx.lock.form : saved.form && FORMATIONS[saved.form] ? saved.form : '4-3-3';
+  let pick = ctx.lock ? ctx.lock.pick.slice() : Array.isArray(saved.xi) && saved.form === form ? saved.xi.map((id, i) => { const p = ctx.avail.find((q) => q.id === id); return p && eligibleFor(FORMATIONS[form].slots[i], ctx.avail).includes(p) ? id : null; }) : null;
   if (!pick || pick.length !== 11) pick = autoPick(FORMATIONS[form].slots, ctx.avail);
   const plan = { ...DEFAULT_PLAN }; for (const k of Object.keys(plan)) if (saved.plan?.[k]) plan[k] = saved.plan[k];
-  G = { ctx, form, pick, plan, match: null };
+  G = { ctx, form, pick, plan, match: null, locked: Boolean(ctx.lock) };
   const f = ctx.f;
   const rec = saved.history || [];
   const wdl = ['W', 'D', 'L'].map((r) => rec.filter((h) => h.r === r).length);
@@ -275,12 +294,13 @@ export async function managerView() {
     <p class="lede">You're the manager. Pick the shape, the XI and the approach for Spurs' next real match, then play it minute by minute. Ratings come from each player's real stats this season; your choices change the odds.</p>
     <section class="panel mgr-fx"><div class="mgr-teams"><span>${crestImgCode(6)}<strong>Spurs</strong></span><span class="muted">${f.home ? 'v' : '@'}</span><span>${crestImgCode(state.meta.teamCodes?.[f.opponentTeamId])}<strong>${esc(f.opponent)}</strong></span></div>
       <p class="small muted" style="margin:6px 0 0">${esc(f.competition)} · ${esc(fmtDate(f.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}, ${esc(fmtTime(f.kickoff))} Bahrain${rec.length ? ` · Your record: <strong>${wdl[0]}W ${wdl[1]}D ${wdl[2]}L</strong>` : ''}</p></section>
+    ${G.locked ? `<div class="banner info lock-banner">🔒 <strong>Line-ups confirmed.</strong> The real Spurs XI${ctx.lock.formation ? ` (${esc(ctx.lock.formation)})` : ''} is loaded and locked${ctx.lock.oppFormation ? `, against ${esc(f.opponent)}'s real XI (${esc(ctx.lock.oppFormation)})` : ''}. You can still set tactics and make substitutions during the match.</div>` : ''}
     <div class="mgr-grid section">
       <div>
         <div class="mgr-ctl"><label class="small muted">Formation</label><div class="seg" id="mg-form">${Object.keys(FORMATIONS).map((k) => `<button data-v="${k}" aria-pressed="${k === form}">${k}</button>`).join('')}</div></div>
         <div id="mg-tactics"></div>
         <div class="pitch" id="mg-pitch"></div>
-        <div class="mgr-actions"><button class="btn ghost" id="mg-auto">Auto-pick best XI</button><button class="btn" id="mg-kick">Kick off ▶</button></div>
+        <div class="mgr-actions">${G.locked ? '' : '<button class="btn ghost" id="mg-auto">Auto-pick best XI</button>'}<button class="btn" id="mg-kick">Kick off ▶</button></div>
       </div>
       <div>
         <div class="panel" id="mg-odds"></div>
@@ -322,8 +342,8 @@ function bestPlans() {
   const W = planEffects(DEFAULT_PLAN, G.ctx).why;
   const mult = (plan, key) => Object.keys(plan).reduce((acc, d) => acc * (W[d]?.[plan[d]]?.[key] ?? 1), 1);
   const results = [];
-  for (const form of Object.keys(FORMATIONS)) {
-    const slots = FORMATIONS[form].slots; const ids = autoPick(slots, G.ctx.avail);
+  for (const form of G.locked ? [G.form] : Object.keys(FORMATIONS)) {
+    const slots = FORMATIONS[form].slots; const ids = G.locked ? G.pick : autoPick(slots, G.ctx.avail);
     const xi = ids.map((id, i) => ({ player: G.ctx.avail.find((p) => p.id === id) || null, slot: slots[i] }));
     const base = lambdas(G.ctx, xi, form, DEFAULT_PLAN);
     for (const plan of combos) { const ls = Math.max(0.15, (base.ls / base.E.f) * damp(mult(plan, 'df'))); const lo = Math.max(0.15, (base.lo / base.E.a) * damp(mult(plan, 'da'))); results.push({ form, plan, ls, lo, xp: xPts(ls, lo) }); }
@@ -361,7 +381,7 @@ function prepHtml() {
       <div class="panel"><h3 style="margin-top:0">What the data suggests</h3><p class="tiny faint" style="margin:0 0 8px">Best option in each area, keeping the rest of your plan. Gain = extra expected points (3 for a win, 1 for a draw).</p>
         ${advice.map((a) => `<div class="mg-adv${a.current ? ' ok' : ''}"><div><strong>${esc(a.label)}: ${esc(a.opt)}</strong> ${a.current ? '<span class="mg-eff"><b class="up">✓ already set</b></span>' : `<span class="mg-eff"><b class="up">+${fmtPlain(a.gain, 2)} pts</b></span> <button class="btn ghost mg-apply" data-dim="${a.dim}" data-v="${a.k}">Use</button>`}</div><p class="tiny" style="margin:2px 0 0">${esc(a.text)}</p></div>`).join('')}</div>
     </div>
-    <div class="panel section"><h3 style="margin-top:0">Best plans the model found</h3><p class="tiny faint" style="margin:0 0 8px">Every formation and tactic combination tried with the best available XI for each (${(Object.keys(FORMATIONS).length * 1458).toLocaleString()} plans).</p>
+    <div class="panel section"><h3 style="margin-top:0">Best plans the model found</h3><p class="tiny faint" style="margin:0 0 8px">${G.locked ? 'Every tactic combination tried with the confirmed XI (1,458 plans).' : `Every formation and tactic combination tried with the best available XI for each (${(Object.keys(FORMATIONS).length * 1458).toLocaleString()} plans).`}</p>
       ${plans.map((r, i) => { const pr = probs(r.ls, r.lo); return `<div class="mg-plan"><div><strong>${i + 1}. ${r.form}</strong> <span class="small muted">${esc(planLabel(r.plan))}</span></div><div class="small">Win ${pr.w}% · draw ${pr.d}% · lose ${pr.l}% · <strong>${fmtPlain(r.xp, 2)} pts</strong> · xG ${fmtPlain(r.ls, 2)}–${fmtPlain(r.lo, 2)}</div><button class="btn ghost mg-useplan" data-i="${i}">Use this plan</button></div>`; }).join('')}
       <p class="tiny faint">Your current set-up: ${fmtPlain(curXp, 2)} expected points.</p></div>
     ${ctx.preview.plan?.length ? `<div class="panel section"><h3 style="margin-top:0">Scout's notes</h3><ul class="small" style="margin:0;padding-left:18px">${ctx.preview.plan.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>` : ''}
@@ -397,12 +417,13 @@ function drawSetup() {
     <div class="statrow"><span>Defence</span><span class="v">${Math.round(st.def)}</span></div>${bar(st.def, 110)}
     <div class="statrow"><span>Expected goals</span><span class="v">${fmtPlain(ls, 2)} – ${fmtPlain(lo, 2)}</span></div></div>`;
   document.getElementById('mg-kick').disabled = G.pick.some((id) => !id);
-  save({ ...load(), form: G.form, xi: G.pick, plan: G.plan });
+  save(G.locked ? { ...load(), plan: G.plan } : { ...load(), form: G.form, xi: G.pick, plan: G.plan });
   clearTimeout(G.prepT); G.prepT = setTimeout(() => { const el = document.getElementById('mg-prep'); if (el) el.innerHTML = prepHtml(); }, 30);
 }
 const pitchLines = () => '<div class="pl-half"></div><div class="pl-circle"></div><div class="pl-box top"></div><div class="pl-box bottom"></div>';
 
 function openPicker(i) {
+  if (G.locked) return; // the real XI is locked once line-ups are confirmed
   const sl = FORMATIONS[G.form].slots[i];
   const cur = G.pick[i];
   const list = eligibleFor(sl, G.ctx.avail).sort((a, b) => ratingIn(b, sl) - ratingIn(a, sl));
@@ -426,15 +447,16 @@ export function managerAfter() {
   if (!G) return;
   drawSetup();
   const seg = (id, key, after) => document.getElementById(id).addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b) return; G[key] = b.dataset.v; document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute('aria-pressed', x === b)); after?.(); drawSetup(); });
-  seg('mg-form', 'form', () => { G.pick = autoPick(FORMATIONS[G.form].slots, G.ctx.avail); });
+  if (G.locked) document.querySelectorAll('#mg-form button').forEach((b) => { b.disabled = true; });
+  else seg('mg-form', 'form', () => { G.pick = autoPick(FORMATIONS[G.form].slots, G.ctx.avail); });
   document.getElementById('mg-tactics').addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); const g = e.target.closest('[data-dim]'); if (!b || !g) return; G.plan[g.dataset.dim] = b.dataset.v; drawSetup(); });
   document.getElementById('mg-prep').addEventListener('click', (e) => {
     const a = e.target.closest('.mg-apply'); if (a) { G.plan[a.dataset.dim] = a.dataset.v; drawSetup(); return; }
-    const u = e.target.closest('.mg-useplan'); if (u && G.plans?.[u.dataset.i]) { const r = G.plans[u.dataset.i]; G.form = r.form; G.plan = { ...r.plan }; G.pick = autoPick(FORMATIONS[G.form].slots, G.ctx.avail);
+    const u = e.target.closest('.mg-useplan'); if (u && G.plans?.[u.dataset.i]) { const r = G.plans[u.dataset.i]; if (!G.locked) { G.form = r.form; G.pick = autoPick(FORMATIONS[G.form].slots, G.ctx.avail); } G.plan = { ...r.plan };
       document.querySelectorAll('#mg-form button').forEach((x) => x.setAttribute('aria-pressed', x.dataset.v === G.form)); drawSetup(); document.getElementById('mg-pitch').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   });
   document.getElementById('mg-pitch').addEventListener('click', (e) => { const b = e.target.closest('[data-slot]'); if (b) openPicker(Number(b.dataset.slot)); });
-  document.getElementById('mg-auto').addEventListener('click', () => { G.pick = autoPick(FORMATIONS[G.form].slots, G.ctx.avail); drawSetup(); });
+  document.getElementById('mg-auto')?.addEventListener('click', () => { G.pick = autoPick(FORMATIONS[G.form].slots, G.ctx.avail); drawSetup(); });
   document.getElementById('mg-kick').addEventListener('click', startMatch);
 }
 

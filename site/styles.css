@@ -659,3 +659,6 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .bt-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important; }
 .sc-grid tbody th { width: 22px; }
 .sc-best { color: var(--text) !important; opacity: .85; } .sc-best b { font-weight: 700; }
+.lock-banner { margin-top: 12px; }
+#mg-form button[disabled] { opacity: .45; cursor: default; }
+.lu-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; } .lu-list li { display: flex; gap: 8px; align-items: center; font-size: .9rem; } .lu-list .mg-pos { min-width: 34px; }
