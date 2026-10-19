@@ -68,9 +68,8 @@ const fitPen = (player, slot) => {
   if (player.pos === 'GK' || slot.pos.includes('GK')) return player.pos === 'GK' && slot.pos.includes('GK') ? 1 : 0.3;
   if (naturalIn(player, slot)) return 1;
   const roles = ROLES[player.name];
-  if (slot.pos.includes(player.pos)) return roles ? 0.88 : 1;
-  // A listed natural role outside his broad line (e.g. a midfielder at right-back) still counts.
-  return 0.8;
+  if (slot.pos.includes(player.pos)) return roles ? 0.85 : 0.93; // unknown exact role: small discount
+  return roles ? 0.75 : 0.8;
 };
 const W_ATT = { GK: 0, DEF: 0.35, MID: 0.8, FWD: 1 }; const W_DEF = { GK: 1.3, DEF: 1, MID: 0.6, FWD: 0.15 };
 function strength(xi) { // xi: [{ player, slot, energy, sentOff }]
@@ -90,13 +89,22 @@ const pois = (k, l) => { let p = Math.exp(-l); for (let i = 1; i <= k; i++) p *=
 function probs(ls, lo) { let w = 0; let dr = 0; let l = 0; for (let i = 0; i <= 10; i++) for (let j = 0; j <= 10; j++) { const p = pois(i, ls) * pois(j, lo); if (i > j) w += p; else if (i === j) dr += p; else l += p; } return { w: Math.round(w * 100), d: Math.round(dr * 100), l: Math.round(l * 100) }; }
 
 function autoPick(slots, players, taken = new Set()) {
+  // Fill the whole XI at once: repeatedly take the best remaining (slot, player) pair by
+  // rating in that slot, so natural-role players land in their own positions first.
   const out = slots.map(() => null); const used = new Set(taken);
-  const order = slots.map((sl, i) => i).sort((a, b) => (slots[a].pos.includes('GK') ? -1 : slots[b].pos.includes('GK') ? 1 : 0));
-  // Natural-role specialists first (full-backs, wingers), then the rest by rating in the slot.
-  order.sort((a, b) => (slots[a].pos.includes('GK') ? -1 : slots[b].pos.includes('GK') ? 1 : ['LB', 'RB', 'LWB', 'RWB', 'ST'].includes(slots[b].label) - ['LB', 'RB', 'LWB', 'RWB', 'ST'].includes(slots[a].label)));
-  for (const i of order) {
-    const best = players.filter((p) => !used.has(p.id) && (p.pos === 'GK') === slots[i].pos.includes('GK')).sort((a, b) => b.r.ovr * fitPen(b, slots[i]) - a.r.ovr * fitPen(a, slots[i]))[0];
-    if (best) { out[i] = best.id; used.add(best.id); }
+  const score = (p, sl) => p.r.ovr * fitPen(p, sl) + (naturalIn(p, sl) ? 4 : 0);
+  for (let n = 0; n < slots.length; n++) {
+    let best = null;
+    for (let i = 0; i < slots.length; i++) {
+      if (out[i]) continue;
+      for (const p of players) {
+        if (used.has(p.id) || (p.pos === 'GK') !== slots[i].pos.includes('GK')) continue;
+        const v = score(p, slots[i]);
+        if (!best || v > best.v) best = { i, p, v };
+      }
+    }
+    if (!best) break;
+    out[best.i] = best.p.id; used.add(best.p.id);
   }
   return out;
 }
@@ -165,7 +173,7 @@ export async function managerView() {
       <div>
         <div class="panel" id="mg-odds"></div>
         <div class="panel section" id="mg-bench"></div>
-        <p class="source">Ratings (56–96): each player's per-90 figures this season ranked against Premier League players in his position (FPL/Opta). Players with few minutes are rated from fewer games and pulled towards average. A player in his natural role gets his full rating, another role in his line 88%, a different line 80%. Injured, suspended and loaned-out players can't be picked. The match starts from the site's real forecast for this fixture (expected goals ${fmtPlain(ctx.base.spurs, 2)}–${fmtPlain(ctx.base.opp, 2)} with the strongest XI) and adjusts it for your choices.</p>
+        <p class="source">Ratings (56–96): each player's per-90 figures this season ranked against Premier League players in his position (FPL/Opta). Players with few minutes are rated from fewer games and pulled towards average. A player in his natural role gets his full rating, another role in his line 85%, a different line 75–80%. Injured, suspended and loaned-out players can't be picked. The match starts from the site's real forecast for this fixture (expected goals ${fmtPlain(ctx.base.spurs, 2)}–${fmtPlain(ctx.base.opp, 2)} with the strongest XI) and adjusts it for your choices.</p>
       </div>
     </div>
     <div id="mg-sheet" class="mgr-sheet" hidden></div>`;
