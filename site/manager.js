@@ -56,7 +56,7 @@ function rate(p, pct) {
 // and a different line 80%. Players not listed keep their broad position.
 const ROLES = {
   Gray: ['RB', 'CM', 'DM'], 'Pedro Porro': ['RB'], Udogie: ['LB'], 'Van de Ven': ['CB', 'LB'], 'Van Hecke': ['CB'], Senesi: ['CB', 'LB'], Tosin: ['CB'], Davies: ['LB', 'CB'],
-  Tonali: ['CM', 'DM'], Bentancur: ['CM', 'DM'], Gallagher: ['CM', 'DM'], Bergvall: ['CM', 'AM'], Maddison: ['AM', 'CM'], Xavi: ['AM', 'LW'],
+  Tonali: ['CM', 'DM'], Bentancur: ['CM', 'DM'], Gallagher: ['AM', 'CM', 'DM'], Bergvall: ['CM', 'AM'], Maddison: ['AM', 'CM'], Xavi: ['AM', 'LW'],
   Kudus: ['RW', 'AM'], Kulusevski: ['RW', 'AM'], Odobert: ['LW', 'RW'], Mudryk: ['LW'], 'Sávio': ['RW', 'LW'], Tel: ['LW', 'ST'], Solanke: ['ST'], Marmoush: ['ST', 'LW'],
 };
 const ROLE_OF = { LWB: 'LB', RWB: 'RB', LM: 'LW', RM: 'RW' };
