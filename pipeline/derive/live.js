@@ -113,10 +113,12 @@ export async function runLive({ built, stateDir, now, spursElementIds, elementsB
         const isOpp = (e) => oppTeam !== null && Number(elementsById.get(e.id)?.team) === Number(oppTeam);
         const toRow = (e) => {
           const s = e.stats; const el = elementsById.get(e.id);
-          return { elementId: e.id, name: el ? el.web_name : String(e.id), minutes: s.minutes, goals: s.goals_scored, assists: s.assists, yc: s.yellow_cards, rc: s.red_cards, saves: s.saves,
+          return { elementId: e.id, name: el ? el.web_name : String(e.id), pos: ['GK', 'DEF', 'MID', 'FWD'][Number(el?.element_type) - 1] || null, starts: s.starts ?? null, minutes: s.minutes, goals: s.goals_scored, assists: s.assists, yc: s.yellow_cards, rc: s.red_cards, saves: s.saves,
             tackles: s.tackles ?? null, cbi: s.clearances_blocks_interceptions ?? null, recoveries: s.recoveries ?? null, bps: s.bps, xg: s.expected_goals !== undefined ? Number(s.expected_goals) : null };
         };
-        const order = (a, b) => b.minutes - a.minutes || (b.bps || 0) - (a.bps || 0);
+        // Starters first, then substitutes; within each, goalkeeper → defenders → midfielders → forwards.
+        const PO = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+        const order = (a, b) => (b.starts ?? (b.minutes >= 45 ? 1 : 0)) - (a.starts ?? (a.minutes >= 45 ? 1 : 0)) || (PO[a.pos] ?? 9) - (PO[b.pos] ?? 9) || b.minutes - a.minutes;
         const played = els.filter((e) => (e.stats?.minutes || 0) > 0);
         const players = played.filter((e) => spursElementIds.has(e.id)).map(toRow).sort(order);
         const oppPlayers = played.filter(isOpp).map(toRow).sort(order);

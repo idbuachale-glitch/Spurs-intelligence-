@@ -909,7 +909,7 @@ VIEWS.match = async (id) => {
       { label: 'Pass accuracy', a: adv.spurs.passPct, b: adv.opp.passPct, unit: '%' }, { label: 'Successful take-ons', a: adv.spurs.dribbles, b: adv.opp.dribbles }, { label: 'Tackles won', a: adv.spurs.tacklesWon, b: adv.opp.tacklesWon }, { label: 'Corners', a: adv.spurs.corners, b: adv.opp.corners },
     ], { right: f.opponent }) + `<p class="source">FotMob match statistics via FPL Core Insights (xG here is FotMob's; the season figures use FPL/Opta xG).</p>` : m.team && m.team.xg !== null ? `<div class="statlist"><div class="statrow"><span>Spurs xG (FPL)</span><span class="v">${fmtPlain(m.team.xg, 2)}</span></div><div class="statrow"><span>xG against (est.)</span><span class="v">${fmtPlain(m.team.xga, 2)}</span></div></div>` : '<p class="na">Team statistics are not available for this match.</p>'}</div>
   </div>
-  ${notes.length ? `<div class="panel section"><div class="section-head"><h2>Post-match notes</h2><span class="label-analysis">Calculated analysis</span></div>${notes.map((n) => `<p>${esc(n)}</p>`).join('')}</div>` : ''}
+  ${notes.length && !m.live?.isLive ? `<div class="panel section"><div class="section-head"><h2>Post-match notes</h2><span class="label-analysis">Calculated analysis</span></div>${notes.map((n) => `<p>${esc(n)}</p>`).join('')}</div>` : ''}
 
   ${d?.fotmobUrl ? `<div class="banner info section">Player heat maps, average positions and pass maps for this match are not in the free data. FotMob shows them on its own match page: <a href="${esc(d.fotmobUrl)}" target="_blank" rel="noopener">open this match on FotMob</a>.</div>` : ''}
   ${d && (d.xgRace?.length || d.momentum?.length) ? `<div class="grid two section"><div class="panel"><h2>xG race</h2>${xgRace(d.xgRace, { opp: f.opponent })}<p class="source">Cumulative xG by minute (FotMob).</p></div><div class="panel"><h2>Momentum</h2>${momentumChart(d.momentum, { opp: f.opponent })}<p class="source">FotMob attacking-momentum index per minute.</p></div></div>` : ''}
@@ -965,6 +965,9 @@ if (typeof document !== 'undefined') document.addEventListener('click', (e) => {
   box.querySelectorAll('[data-lt]').forEach((x) => x.setAttribute('aria-pressed', x === b));
   box.querySelectorAll('[data-ltp]').forEach((x) => { x.hidden = x.dataset.ltp !== b.dataset.lt; });
 });
+// Live player rows: starters before substitutes, then GK → DEF → MID → FWD.
+const LIVE_PO = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+const sortLive = (rows) => [...rows].sort((a, b) => (b.starts ?? (b.minutes >= 45 ? 1 : 0)) - (a.starts ?? (a.minutes >= 45 ? 1 : 0)) || (LIVE_PO[a.pos] ?? 9) - (LIVE_PO[b.pos] ?? 9) || b.minutes - a.minutes);
 function liveTimeline(lv, f, { limit = 0 } = {}) {
   let evs = (lv?.events || []).filter((e) => ['Goal', 'Card', 'subst'].includes(e.type)).sort((a, b) => (a.minute ?? 0) - (b.minute ?? 0) || (a.extra ?? 0) - (b.extra ?? 0));
   if (limit) evs = evs.slice(-limit).reverse();
@@ -999,7 +1002,7 @@ function livePanel(m) {
   ], { right: f.opponent }) : `<p class="small muted">${lv.planBlocked ? 'Team statistics are not available on the free API-Football plan for this match.' : 'Team statistics are waiting for the first update from the provider.'}</p>`;
   const evHtml = liveTimeline(lv, f);
   const pl = lv.players || []; const op = lv.oppPlayers || [];
-  const table = (rows) => `<div class="table-wrap"><table class="live-pl"><thead><tr><th>Player</th><th class="r">Min</th><th class="r">G</th><th class="r">A</th><th class="r">Tkl</th><th class="r">CBI</th><th class="r">Rec</th></tr></thead><tbody>${rows.map((p) => `<tr><td>${esc(p.name)}${p.yc ? ' 🟨' : ''}${p.rc ? ' 🟥' : ''}</td><td class="r">${p.minutes}</td><td class="r">${p.goals || ''}</td><td class="r">${p.assists || ''}</td><td class="r">${fmt(p.tackles)}</td><td class="r">${fmt(p.cbi)}</td><td class="r">${fmt(p.recoveries)}</td></tr>`).join('')}</tbody></table></div>`;
+  const table = (rows) => `<div class="table-wrap"><table class="live-pl"><thead><tr><th>Player</th><th class="r">Min</th><th class="r">G</th><th class="r">A</th><th class="r">Tkl</th><th class="r">CBI</th><th class="r">Rec</th></tr></thead><tbody>${sortLive(rows).map((p, i, a) => `<tr${i && a[i - 1].starts === 1 && p.starts === 0 ? ' class="lp-subs"' : ''}><td>${p.pos ? `<span class="mg-pos ${esc(p.pos)}">${esc(p.pos)}</span>` : ''}${esc(p.name)}${p.yc ? ' 🟨' : ''}${p.rc ? ' 🟥' : ''}</td><td class="r">${p.minutes}</td><td class="r">${p.goals || ''}</td><td class="r">${p.assists || ''}</td><td class="r">${fmt(p.tackles)}</td><td class="r">${fmt(p.cbi)}</td><td class="r">${fmt(p.recoveries)}</td></tr>`).join('')}</tbody></table></div>`;
   const plHtml = pl.length || op.length ? `<div class="live-teams" style="margin-top:14px"><div class="seg lt-seg" role="tablist">${pl.length ? `<button data-lt="spurs" aria-pressed="true">${spursCrest()}Spurs</button>` : ''}${op.length ? `<button data-lt="opp" aria-pressed="${pl.length ? 'false' : 'true'}">${oc(f)}${esc(f.opponent)}</button>` : ''}</div>
     <div data-ltp="spurs"${pl.length ? '' : ' hidden'}>${table(pl)}</div><div data-ltp="opp"${pl.length ? ' hidden' : ''}>${table(op)}</div></div><p class="tiny faint" style="margin:4px 0 0">G goals · A assists · Tkl tackles · CBI clearances, blocks &amp; interceptions · Rec recoveries.</p>` : '';
   return `<section class="panel section live-panel">${head}${bars}${evHtml}${plHtml}
