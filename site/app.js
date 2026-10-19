@@ -8,7 +8,7 @@ import { shareButtonHtml, bindShare, makeGraphic } from './share.js';
 const NAV = [
   ['overview', 'Overview', 'i-home'], ['fixtures', 'Fixtures & results', 'i-cal'], ['players', 'Player Lab', 'i-user'], ['team', 'Team statistics', 'i-chart'],
   ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['injuries', 'Injury tracker', 'i-medic'], ['weekly', 'Weekly report', 'i-doc'], ['replays', 'Goal replays', 'i-replay'], ['graphic', 'Match graphic', 'i-share'], ['table', 'League table', 'i-table'],
-  ['breakdown', 'Match breakdown', 'i-spark'], ['simulator', 'Season simulator', 'i-dice'], ['manager', 'Matchday Simulator', 'i-whistle'], ['style', 'De Zerbi tracker', 'i-trend'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
+  ['breakdown', 'Match breakdown', 'i-spark'], ['simulator', 'Season forecast', 'i-dice'], ['manager', 'Matchday Simulator', 'i-whistle'], ['style', 'De Zerbi tracker', 'i-trend'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
 ];
 const BOTTOM = ['overview', 'breakdown', 'players', 'fixtures'];
 const view = document.getElementById('view');
@@ -1021,7 +1021,7 @@ VIEWS.breakdown = async (id) => {
     ${b.verdict ? `<div class="hero-meta"><span>xG <strong>${fmtPlain(b.verdict.xgFor, 2)}</strong> v <strong>${fmtPlain(b.verdict.xgAgainst, 2)}</strong></span>${b.momentumShare !== undefined && b.momentumShare !== null ? `<span>Spurs on top for <strong>${b.momentumShare}%</strong> of the match</span>` : ''}</div><p style="margin:10px 0 0;color:#dfe9ff">${esc(b.verdict.text)}</p>` : ''}
     ${b.styleTags.length ? `<div class="chips" style="margin-top:12px">${b.styleTags.map((t) => `<span class="pill" style="color:#bff6ff;border-color:rgba(60,232,255,.4)">${esc(t)}</span>`).join('')}</div>` : ''}</section>
 
-  ${m.forecast && m.forecast.result ? `<div class="banner info section">Pre-match forecast: Spurs win ${m.forecast.win}%, draw ${m.forecast.draw}%, ${esc(f.opponent)} win ${m.forecast.loss}%. The ${({ W: 'win', D: 'draw', L: 'defeat' })[m.forecast.result]} had a ${m.forecast.probOfResult}% chance. <a href="#/simulator">Season simulator</a></div>` : ''}
+  ${m.forecast && m.forecast.result ? `<div class="banner info section">Pre-match forecast: Spurs win ${m.forecast.win}%, draw ${m.forecast.draw}%, ${esc(f.opponent)} win ${m.forecast.loss}%. The ${({ W: 'win', D: 'draw', L: 'defeat' })[m.forecast.result]} had a ${m.forecast.probOfResult}% chance. <a href="#/simulator">Season forecast</a></div>` : ''}
   <div class="grid two section">
     <div class="panel"><h2>Key moments</h2>${b.moments.length ? `<div class="timeline">${b.moments.map((x) => `<div class="tl-row ${x.side}"><span class="tl-min">${esc(x.label)}</span><span class="tl-dot ${x.kind}"></span><span>${esc(x.text)}<span class="faint small"> · ${x.side === 'spurs' ? 'Spurs' : esc(f.opponent)}</span></span></div>`).join('')}</div>` : '<p class="na">No goals or big chances recorded with minutes.</p>'}
       ${b.spells.length ? `<h3 style="margin-top:16px">Spells on top</h3><div class="chips">${b.spells.map((x) => `<span class="pill" style="border-color:${x.side === 'spurs' ? 'var(--cyan)' : 'var(--loss)'}">${esc(x.text)}</span>`).join('')}</div>` : ''}
@@ -1201,7 +1201,7 @@ AFTER.manager = managerAfter;
 // ---------------- Season simulator ----------------
 VIEWS.simulator = async () => {
   const sim = await loadSeason('simulation.json', state.season, { optional: true });
-  if (!sim) return '<h1>Season simulator</h1><div class="empty">The simulator runs for the current season once match data is available.</div>';
+  if (!sim) return '<h1>Season forecast</h1><div class="empty">The forecast runs for the current season once match data is available.</div>';
   const s = sim.spurs;
   const likely = s.positions.indexOf(Math.max(...s.positions)) + 1;
   const tile = (v, l, ctx, col) => `<div class="rank-tile"><div class="val" style="${col ? `color:${col}` : ''}">${v}</div><div class="lbl">${l}</div><div class="ctx">${ctx}</div></div>`;
@@ -1209,7 +1209,7 @@ VIEWS.simulator = async () => {
   const bars = s.positions.map((p, i) => { const pos = i + 1; const h = maxP ? (p / maxP) * 150 : 0; const col = pos >= 18 ? 'var(--loss)' : pos <= 6 ? 'var(--win)' : 'var(--cyan)';
     return `<g><rect x="${18 + i * 30}" y="${170 - h}" width="22" height="${h}" rx="3" fill="${col}" opacity="${pos === s.position ? 1 : 0.75}"><title>${ordinal(pos)}: ${p}%</title></rect><text x="${29 + i * 30}" y="186" text-anchor="middle">${pos}</text>${p >= 3 ? `<text x="${29 + i * 30}" y="${164 - h}" text-anchor="middle" style="font-size:9px">${Math.round(p)}</text>` : ''}</g>`; }).join('');
   const fc = sim.next;
-  return `<div class="section-head"><h1>Season simulator</h1><span class="label-analysis">Re-run after every match</span></div>
+  return `<div class="section-head"><h1>Season forecast</h1><span class="label-analysis">Re-run after every match</span></div>
   <p class="muted">The rest of the Premier League season played out ${sim.sims.toLocaleString()} times (${sim.remainingFixtures} fixtures left), based on how well every team creates and prevents chances.</p>
   <div class="rank-grid">
     ${tile(`${s.relegation}%`, 'Relegation', 'Finishing 18th–20th', s.relegation >= 25 ? 'var(--loss)' : null)}
