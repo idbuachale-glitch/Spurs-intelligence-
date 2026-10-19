@@ -63,6 +63,15 @@ const ROLE_OF = { LWB: 'LB', RWB: 'RB', LM: 'LW', RM: 'RW' };
 const slotRole = (slot) => ROLE_OF[slot.label] || slot.label;
 const naturalIn = (player, slot) => (ROLES[player.name] || []).includes(slotRole(slot));
 
+// Who may play where: a player with listed roles only in those roles; anyone else only
+// in his broad line (defence, midfield, attack); goalkeepers only in goal. If injuries
+// leave a position with nobody eligible, the broad line is allowed for that position.
+const eligibleStrict = (p, slot) => {
+  if ((p.pos === 'GK') !== slot.pos.includes('GK')) return false;
+  return ROLES[p.name] ? naturalIn(p, slot) : slot.pos.includes(p.pos);
+};
+const eligibleFor = (slot, players) => { const strict = players.filter((p) => eligibleStrict(p, slot)); return strict.length ? strict : players.filter((p) => (p.pos === 'GK') === slot.pos.includes('GK') && (slot.pos.includes(p.pos) || p.pos !== 'GK')); };
+
 // ---------- Team strength ----------
 const fitPen = (player, slot) => {
   if (player.pos === 'GK' || slot.pos.includes('GK')) return player.pos === 'GK' && slot.pos.includes('GK') ? 1 : 0.3;
@@ -97,8 +106,9 @@ function autoPick(slots, players, taken = new Set()) {
     let best = null;
     for (let i = 0; i < slots.length; i++) {
       if (out[i]) continue;
-      for (const p of players) {
-        if (used.has(p.id) || (p.pos === 'GK') !== slots[i].pos.includes('GK')) continue;
+      const pool = eligibleFor(slots[i], players);
+      for (const p of pool) {
+        if (used.has(p.id)) continue;
         const v = score(p, slots[i]);
         if (!best || v > best.v) best = { i, p, v };
       }
@@ -152,7 +162,7 @@ export async function managerView() {
   if (!ctx) return '<h1>Matchday Simulator</h1><div class="empty">There is no upcoming fixture to play right now.</div>';
   const saved = load();
   const form = saved.form && FORMATIONS[saved.form] ? saved.form : '4-3-3';
-  let pick = Array.isArray(saved.xi) && saved.form === form ? saved.xi.map((id) => (ctx.avail.some((p) => p.id === id) ? id : null)) : null;
+  let pick = Array.isArray(saved.xi) && saved.form === form ? saved.xi.map((id, i) => { const p = ctx.avail.find((q) => q.id === id); return p && eligibleFor(FORMATIONS[form].slots[i], ctx.avail).includes(p) ? id : null; }) : null;
   if (!pick || pick.length !== 11) pick = autoPick(FORMATIONS[form].slots, ctx.avail);
   G = { ctx, form, pick, press: saved.press || 'mid', ment: saved.ment || 'bal', match: null };
   const f = ctx.f;
@@ -173,7 +183,7 @@ export async function managerView() {
       <div>
         <div class="panel" id="mg-odds"></div>
         <div class="panel section" id="mg-bench"></div>
-        <p class="source">Ratings (56–96): each player's per-90 figures this season ranked against Premier League players in his position (FPL/Opta). Players with few minutes are rated from fewer games and pulled towards average. A player in his natural role gets his full rating, another role in his line 85%, a different line 75–80%. Injured, suspended and loaned-out players can't be picked. The match starts from the site's real forecast for this fixture (expected goals ${fmtPlain(ctx.base.spurs, 2)}–${fmtPlain(ctx.base.opp, 2)} with the strongest XI) and adjusts it for your choices.</p>
+        <p class="source">Ratings (56–96): each player's per-90 figures this season ranked against Premier League players in his position (FPL/Opta). Players with few minutes are rated from fewer games and pulled towards average. Players can only be picked in the roles they play; those whose exact role isn't known can play anywhere in their line at 93%. Injured, suspended and loaned-out players can't be picked. The match starts from the site's real forecast for this fixture (expected goals ${fmtPlain(ctx.base.spurs, 2)}–${fmtPlain(ctx.base.opp, 2)} with the strongest XI) and adjusts it for your choices.</p>
       </div>
     </div>
     <div id="mg-sheet" class="mgr-sheet" hidden></div>`;
@@ -214,16 +224,17 @@ const pitchLines = () => '<div class="pl-half"></div><div class="pl-circle"></di
 function openPicker(i) {
   const sl = FORMATIONS[G.form].slots[i];
   const cur = G.pick[i];
-  const list = G.ctx.avail.slice().sort((a, b) => ratingIn(b, sl) - ratingIn(a, sl));
+  const list = eligibleFor(sl, G.ctx.avail).sort((a, b) => ratingIn(b, sl) - ratingIn(a, sl));
+  const strict = G.ctx.avail.some((p) => eligibleStrict(p, sl));
   const sheet = document.getElementById('mg-sheet');
   sheet.innerHTML = `<div class="mgr-sheet-in"><div class="section-head"><h3 style="margin:0">Pick for ${sl.label}</h3><button class="btn ghost" data-close>Close</button></div>
-    <div class="mg-list">${list.map((p) => { const where = G.pick.indexOf(p.id); return `<button class="mg-row pick${p.id === cur ? ' on' : ''}" data-pid="${p.id}"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} ${tag(p)}${where >= 0 && p.id !== cur ? `<span class="faint tiny"> in XI (${FORMATIONS[G.form].slots[where].label}) · swap</span>` : ''}${naturalIn(p, sl) ? '<span class="tiny" style="color:var(--win)"> natural</span>' : fitPen(p, sl) < 0.9 ? '<span class="faint tiny"> out of position</span>' : ''}</span><strong>${ratingIn(p, sl)}</strong></button>`; }).join('')}</div></div>`;
+    ${strict ? `<p class="small muted" style="margin:0 0 8px">Only players who play ${sl.label} are shown.</p>` : `<p class="small" style="margin:0 0 8px;color:var(--warn)">Nobody available plays ${sl.label} naturally, so the whole ${{ DEF: 'defence', MID: 'midfield', FWD: 'attack' }[sl.pos[0]] || 'squad'} is shown.</p>`}<div class="mg-list">${list.map((p) => { const where = G.pick.indexOf(p.id); return `<button class="mg-row pick${p.id === cur ? ' on' : ''}" data-pid="${p.id}"><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)} ${tag(p)}${where >= 0 && p.id !== cur ? `<span class="faint tiny"> in XI (${FORMATIONS[G.form].slots[where].label})</span>` : ''}${naturalIn(p, sl) ? '<span class="tiny" style="color:var(--win)"> natural</span>' : fitPen(p, sl) < 0.9 ? '<span class="faint tiny"> out of position</span>' : ''}</span><strong>${ratingIn(p, sl)}</strong></button>`; }).join('')}</div></div>`;
   sheet.hidden = false;
   sheet.onclick = (e) => {
     if (e.target === sheet || e.target.closest('[data-close]')) { sheet.hidden = true; return; }
     const b = e.target.closest('[data-pid]'); if (!b) return;
     const pid = b.dataset.pid; const j = G.pick.indexOf(pid);
-    if (j >= 0) G.pick[j] = G.pick[i]; // swap positions
+    if (j >= 0) { const prev = G.ctx.avail.find((q) => q.id === G.pick[i]); G.pick[j] = prev && eligibleFor(FORMATIONS[G.form].slots[j], G.ctx.avail).includes(prev) ? prev.id : null; } // swap when he can play there
     G.pick[i] = pid; sheet.hidden = true; drawSetup();
   };
 }
@@ -371,7 +382,7 @@ function manageHtml() {
     <h3>Substitutions <span class="muted small">(${m.subsLeft} left)</span></h3>
     ${m.subsLeft ? `<p class="small muted" style="margin-top:0">Tap a player to take off, then one to bring on.</p>
     <div class="mgr-subs"><div class="mg-list" id="mg-off">${m.xi.map((x, i) => (x.player && !x.sentOff ? `<button class="mg-row pick${G.subOff === i ? ' on' : ''}" data-off="${i}"><span class="mg-pos ${x.player.pos}">${x.slot.label}</span><span>${esc(x.player.name)}${x.injured ? ' 🩹' : ''}${x.yc ? ' 🟨' : ''}</span><span class="mg-energy" title="Energy"><i style="width:${Math.round(x.energy * 100)}%"></i></span></button>` : '')).join('')}</div>
-    <div class="mg-list" id="mg-on">${bench.map((p) => `<button class="mg-row pick" data-on="${p.id}" ${G.subOff === undefined ? 'disabled' : ''}><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)}</span><strong>${G.subOff !== undefined ? ratingIn(p, m.xi[G.subOff].slot) : p.r.ovr}</strong></button>`).join('')}</div></div>` : '<p class="small muted">No substitutions left.</p>'}
+    <div class="mg-list" id="mg-on">${(G.subOff !== undefined ? eligibleFor(m.xi[G.subOff].slot, bench) : bench).map((p) => `<button class="mg-row pick" data-on="${p.id}" ${G.subOff === undefined ? 'disabled' : ''}><span class="mg-pos ${p.pos}">${p.pos}</span><span>${esc(p.name)}</span><strong>${G.subOff !== undefined ? ratingIn(p, m.xi[G.subOff].slot) : p.r.ovr}</strong></button>`).join('')}</div></div>` : '<p class="small muted">No substitutions left.</p>'}
     <button class="btn" id="mg-resume" style="margin-top:12px">▶ Resume match</button></section>`;
 }
 
