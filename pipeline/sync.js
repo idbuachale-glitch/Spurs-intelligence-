@@ -397,6 +397,15 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
       const mf = built.files[`matches/${nextFx.id}.json`];
       if (mf) { mf.forecast = next; if (mf.preview) mf.preview.forecast = next; if (next.lineups) mf.lineups = next.lineups; }
     }
+    // Matches already under way keep their confirmed line-ups and their final pre-kick-off forecast.
+    for (const f of built.fixtures) {
+      if (!f.kickoff || Date.parse(f.kickoff) > now.getTime() || f.friendly) continue;
+      const mf = built.files[`matches/${f.id}.json`]; if (!mf) continue;
+      const hId = f.home ? spursId : f.opponentTeamId; const aId = f.home ? f.opponentTeamId : spursId;
+      const lu = lineupInfo.get(`${hId}-${aId}`) || lineupInfo.get(`cup-${f.id}`);
+      if (lu && !mf.lineups) mf.lineups = { retrievedAt: lu.retrievedAt, spurs: f.home ? lu.home : lu.away, opp: f.home ? lu.away : lu.home };
+      if (!mf.forecast && preds[f.id]) mf.forecast = preds[f.id];
+    }
     // Difficulty for every upcoming match against a rated (Premier League) opponent:
     // expected points for Spurs from the same model (3 × win% + draw%).
     for (const f of built.fixtures) {

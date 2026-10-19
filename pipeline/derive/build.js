@@ -91,7 +91,8 @@ export function buildSeason(input) {
       id, source: 'fpl', sourceId: num(f.id), competition: 'Premier League', competitionId: 'pl', gameweek: num(f.event),
       kickoff: f.kickoff_time || null, kickoffHistory, home, opponent: opp ? opp.name : 'Unknown', opponentShort: opp ? opp.short : null,
       opponentTeamId: opp ? opp.id : null, venue: home ? 'Home' : 'Away', status, minute: status === 'LIVE' ? num(f.minutes) : null,
-      score, result: score ? resultOf(score.spurs, score.opp) : null, events,
+      // No result until the final whistle: a live score is not a result.
+      score, result: score && status !== 'LIVE' ? resultOf(score.spurs, score.opp) : null, events,
     };
   });
 
