@@ -148,11 +148,11 @@ function rate(p, pct) {
 const ROLES = {
   Gray: ['RB', 'CM', 'DM'], 'Pedro Porro': ['RB'], Udogie: ['LB'], 'Van de Ven': ['CB', 'LB'], 'Van Hecke': ['CB'], Senesi: ['CB', 'LB'], Tosin: ['CB'], Davies: ['LB', 'CB'],
   Tonali: ['CM', 'DM'], Bentancur: ['CM', 'DM'], Gallagher: ['AM', 'CM', 'DM'], Bergvall: ['CM', 'AM'], Maddison: ['AM', 'CM'], Xavi: ['AM', 'LW'],
-  Kudus: ['RW', 'AM'], Kulusevski: ['RW', 'AM'], Odobert: ['LW', 'RW'], Mudryk: ['LW'], 'Sávio': ['RW', 'LW'], Tel: ['LW', 'ST'], Solanke: ['ST'], Marmoush: ['ST', 'LW'],
+  Kudus: ['RW', 'AM', 'RWB'], Kulusevski: ['RW', 'AM'], Odobert: ['LW', 'RW'], Mudryk: ['LW'], 'Sávio': ['RW', 'LW'], Tel: ['LW', 'ST'], Solanke: ['ST'], Marmoush: ['ST', 'LW'],
 };
 const ROLE_OF = { LWB: 'LB', RWB: 'RB', LM: 'LW', RM: 'RW' };
 const slotRole = (slot) => ROLE_OF[slot.label] || slot.label;
-const naturalIn = (player, slot) => (ROLES[player.name] || []).includes(slotRole(slot));
+const naturalIn = (player, slot) => { const r = ROLES[player.name] || []; return r.includes(slot.label) || r.includes(slotRole(slot)); }; // e.g. a wing-back slot accepts natural wing-backs and full-backs
 
 // Who may play where: a player with listed roles only in those roles; anyone else only
 // in his broad line (defence, midfield, attack); goalkeepers only in goal. If injuries
