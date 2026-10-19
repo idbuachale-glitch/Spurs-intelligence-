@@ -1,11 +1,12 @@
 import { state, load, loadSeason, esc, fmt, fmtPlain, fmtDate, fmtTime, fmtDateTime, ago, statusText, resultChip, photoHtml, norm, sortableTable } from './lib.js';
 import { lineChart, pairBars, shotMap, barList, xgRace, momentumChart, shotZonePitch, conceptPitch, radar } from './charts.js';
 import { answer, renderAnswer, suggestions } from './analyst.js';
+import { managerView, managerAfter } from './manager.js';
 
 const NAV = [
   ['overview', 'Overview', 'i-home'], ['fixtures', 'Fixtures & results', 'i-cal'], ['players', 'Player Lab', 'i-user'], ['team', 'Team statistics', 'i-chart'],
   ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['table', 'League table', 'i-table'],
-  ['breakdown', 'Match breakdown', 'i-spark'], ['simulator', 'Season simulator', 'i-dice'], ['style', 'De Zerbi tracker', 'i-trend'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
+  ['breakdown', 'Match breakdown', 'i-spark'], ['simulator', 'Season simulator', 'i-dice'], ['manager', 'Manager mode', 'i-whistle'], ['style', 'De Zerbi tracker', 'i-trend'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
 ];
 const BOTTOM = ['overview', 'breakdown', 'players', 'fixtures'];
 const view = document.getElementById('view');
@@ -989,6 +990,9 @@ AFTER.breakdown = () => {
   const s = document.getElementById('bd-match');
   if (s) s.addEventListener('change', () => { location.hash = `#/breakdown/${encodeURIComponent(s.value)}`; });
 };
+
+VIEWS.manager = managerView;
+AFTER.manager = managerAfter;
 
 // ---------------- Season simulator ----------------
 VIEWS.simulator = async () => {
