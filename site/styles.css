@@ -756,3 +756,4 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .live-tiles > div { border: 1px solid var(--line); border-radius: 10px; padding: 8px; text-align: center; display: flex; flex-direction: column; }
 .live-tiles strong { font-family: var(--display); font-size: 1.3rem; }
 .live-tiles span { font-size: 0.72rem; color: var(--muted); }
+[hidden] { display: none !important; }

@@ -109,12 +109,19 @@ export async function runLive({ built, stateDir, now, spursElementIds, elementsB
     if (fx.source === 'fpl' && fx.gameweek) {
       try {
         const els = await fpl.fetchLive(fx.gameweek);
-        const players = els.filter((e) => spursElementIds.has(e.id) && (e.stats?.minutes || 0) > 0).map((e) => {
+        const oppTeam = fx.opponentTeamId ?? null;
+        const isOpp = (e) => oppTeam !== null && Number(elementsById.get(e.id)?.team) === Number(oppTeam);
+        const toRow = (e) => {
           const s = e.stats; const el = elementsById.get(e.id);
           return { elementId: e.id, name: el ? el.web_name : String(e.id), minutes: s.minutes, goals: s.goals_scored, assists: s.assists, yc: s.yellow_cards, rc: s.red_cards, saves: s.saves,
             tackles: s.tackles ?? null, cbi: s.clearances_blocks_interceptions ?? null, recoveries: s.recoveries ?? null, bps: s.bps, xg: s.expected_goals !== undefined ? Number(s.expected_goals) : null };
-        }).sort((a, b) => b.minutes - a.minutes || (b.bps || 0) - (a.bps || 0));
+        };
+        const order = (a, b) => b.minutes - a.minutes || (b.bps || 0) - (a.bps || 0);
+        const played = els.filter((e) => (e.stats?.minutes || 0) > 0);
+        const players = played.filter((e) => spursElementIds.has(e.id)).map(toRow).sort(order);
+        const oppPlayers = played.filter(isOpp).map(toRow).sort(order);
         if (players.length) { snap.players = players; snap.playersAt = now.toISOString(); }
+        if (oppPlayers.length) snap.oppPlayers = oppPlayers;
       } catch (err) { notes.push(`FPL live: ${err.message}`); }
     }
     writeJson(snapFile, snap);
