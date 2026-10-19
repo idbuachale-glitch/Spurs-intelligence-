@@ -20,6 +20,12 @@ export function liveCandidate(fixtures, now) {
   }) || null;
 }
 
+// Team stats from both feeds: API-Football's figures (incl. xG) take priority, ESPN fills the rest.
+function mergeStats(espnStats, apiStats) {
+  if (!espnStats) return apiStats;
+  const side = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) if (v !== null && v !== undefined) o[k] = v; return o; };
+  return { spurs: side(espnStats.spurs, apiStats.spurs), opp: side(espnStats.opp, apiStats.opp) };
+}
 const FINISHED = new Set(['FT', 'AET', 'PEN', 'ABD', 'AWD', 'WO', 'CANC']);
 
 export async function runLive({ built, stateDir, now, spursElementIds, elementsById, health }) {
@@ -85,8 +91,10 @@ export async function runLive({ built, stateDir, now, spursElementIds, elementsB
         if (snap.apiFixtureId) { live = await af.fixtureById(snap.apiFixtureId, ids.teamId); spend(); }
         else if ((now - new Date(fx.kickoff)) / 60000 >= 1) { live = await af.liveFixture(ids.teamId); spend(); if (live) snap.apiFixtureId = live.fixtureId; }
         if (live) {
-          Object.assign(snap, { status: live.status || snap.status, statusLong: live.statusLong || snap.statusLong, minute: live.minute ?? snap.minute, extra: live.extra ?? snap.extra, score: live.score || snap.score, stats: live.stats || snap.stats || null, events: live.events || snap.events || null, retrievedAt: now.toISOString() });
-          if (live.stats) snap.statsSource = 'API-Football (free plan)';
+          Object.assign(snap, { status: live.status || snap.status, statusLong: live.statusLong || snap.statusLong, minute: live.minute ?? snap.minute, extra: live.extra ?? snap.extra, score: live.score || snap.score, stats: live.stats ? mergeStats(snap.statsSource === 'ESPN match feed' || snap.statsSource?.includes('ESPN') ? snap.stats : null, live.stats) : snap.stats || null,
+            // ESPN's events include substitutions and assists, so they win when present.
+            events: snap.espn && snap.events?.length ? snap.events : live.events || snap.events || null, retrievedAt: now.toISOString() });
+          if (live.stats) snap.statsSource = snap.espn ? 'API-Football (free plan) and ESPN match feed' : 'API-Football (free plan)';
           if (FINISHED.has(live.status)) snap.final = true;
         }
         health.ok({ records: { requestsToday: budget.used, budget: DAILY_BUDGET, match: fx.id, status: snap.status || 'waiting for kick-off' } });

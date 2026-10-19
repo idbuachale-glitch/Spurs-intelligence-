@@ -495,6 +495,7 @@ function proxyPanelHtml(px, p) {
 let teamNames = null;
 const oppName = (m) => m.opponent || (m.opponentTeamId && teamNames?.get(m.opponentTeamId)) || 'opponent';
 AFTER.player = async (id) => {
+  { const lp = document.querySelector('.live-panel[data-mid]'); if (lp) liveReload(['fixtures.json', `matches/${lp.dataset.mid}.json`]); }
   const sel = document.getElementById('p-shot-match');
   if (sel) {
     const data = await loadSeason(`players/${id}.json`, state.season, { optional: true });
@@ -503,7 +504,51 @@ AFTER.player = async (id) => {
   view.querySelectorAll('[data-season]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); const s = document.getElementById('season'); s.value = a.dataset.season; s.dispatchEvent(new Event('change')); }));
 };
 const origPlayer = VIEWS.player;
-VIEWS.player = async (id) => { const t = await loadSeason('table.json'); teamNames = new Map(t.rows.map((r) => [r.teamId, r.team])); return origPlayer(id); };
+VIEWS.player = async (id) => {
+  const t = await loadSeason('table.json'); teamNames = new Map(t.rows.map((r) => [r.teamId, r.team]));
+  const html = await origPlayer(id);
+  const live = state.season === state.seasons.current ? await playerLiveHtml(id).catch(() => '') : '';
+  if (!live) return html;
+  const at = html.indexOf('<div class="grid four section">');
+  return at > 0 ? html.slice(0, at) + live + html.slice(at) : live + html;
+};
+// "Live now" box on a player's profile during a Spurs match (ESPN events and stats, FPL live figures).
+const ESPN_STAT = { totalGoals: 'Goals', goalAssists: 'Assists', totalShots: 'Shots', shotsOnTarget: 'On target', foulsCommitted: 'Fouls', foulsSuffered: 'Fouled', offsides: 'Offsides', saves: 'Saves', goalsConceded: 'Conceded', shotsFaced: 'Shots faced', yellowCards: 'Yellow', redCards: 'Red', ownGoals: 'Own goals' };
+async function playerLiveHtml(id) {
+  const fx = await loadSeason('fixtures.json');
+  const f = fx.fixtures.find((x) => inLiveWindow(x) && (x.live || x.status === 'LIVE'));
+  if (!f) return '';
+  const [m, data] = await Promise.all([loadSeason(`matches/${f.id}.json`, state.season, { optional: true }), loadSeason(`players/${id}.json`, state.season, { optional: true })]);
+  const lv = m?.live; const p = data?.player; if (!lv || !p) return '';
+  const nm = (x) => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').trim();
+  const last = nm(p.web).split(' ').slice(-1)[0]; const full = nm(p.name);
+  const me = (n) => { const x = nm(n); return x && (x === full || x === nm(p.web) || x.endsWith(` ${last}`) || x === last); };
+  const ep = (lv.espn?.players || []).find((x) => me(x.name) || me(x.short));
+  const fp = (lv.players || []).find((x) => x.elementId === p.elementId || me(x.name));
+  const evs = (lv.events || []).filter((e) => e.team === 'spurs' && (me(e.player) || (e.type !== 'Card' && me(e.assist))));
+  const on = evs.find((e) => e.type === 'subst' && me(e.player)); const off = evs.find((e) => e.type === 'subst' && me(e.assist));
+  const mm = (e) => `${e.minute ?? ''}${e.extra ? `+${e.extra}` : ''}′`;
+  let role = ep ? (ep.starter ? 'In the starting XI' : 'On the bench') : lv.espn ? 'Not in the matchday squad' : null;
+  if (on) role = `Came on ${mm(on)} for ${on.assist || '?'}`;
+  if (off) role = `${ep?.starter ? 'Started, s' : 'S'}ubbed off ${mm(off)} (${off.player || '?'} on)`;
+  if (!role && !fp) return '';
+  const moments = evs.filter((e) => e.type !== 'subst').map((e) => `<li>${e.type === 'Goal' ? (me(e.player) ? '⚽ Goal' : '🅰️ Assist') : /red/i.test(e.detail) ? '🟥 Red card' : '🟨 Yellow card'} <span class="muted">${mm(e)}</span></li>`).join('');
+  const es = ep?.stats || {}; const isGK = p.pos === 'GK';
+  const val = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+  const stats = [
+    ['Minutes', val(fp?.minutes)], ['Goals', val(es.totalGoals ?? fp?.goals)], ['Assists', val(es.goalAssists ?? fp?.assists)], ['Shots', val(es.totalShots)], ['On target', val(es.shotsOnTarget)],
+    ...(isGK ? [['Saves', val(es.saves ?? fp?.saves)], ['Shots faced', val(es.shotsFaced)], ['Conceded', val(es.goalsConceded)]] : []),
+    ['Tackles', val(fp?.tackles)], ['Clear./blocks/int.', val(fp?.cbi)], ['Recoveries', val(fp?.recoveries)], ['Fouled', val(es.foulsSuffered)], ['Fouls', val(es.foulsCommitted)],
+    ['Offsides', val(es.offsides) || null], ['Own goals', val(es.ownGoals) || null], ['FPL bonus score', val(fp?.bps)],
+  ];
+  const shown = stats.filter(([, v]) => v !== null && v !== undefined);
+  const sc = lv.score ? `${f.home ? `Spurs ${lv.score.spurs}–${lv.score.opp} ${esc(f.opponent)}` : `${esc(f.opponent)} ${lv.score.opp}–${lv.score.spurs} Spurs`}` : `${f.home ? 'v' : '@'} ${esc(f.opponent)}`;
+  return `<section class="panel section live-panel" data-mid="${esc(f.id)}"><div class="section-head"><h2>${lv.isLive ? '<span class="live-pill">LIVE</span> ' : ''}${sc}${lv.isLive && lv.minute ? ` · ${lv.minute}′` : lv.isLive ? '' : ' · full time'}</h2><a class="small" href="#/match/${encodeURIComponent(f.id)}">Match Centre →</a></div>
+    ${role ? `<p style="margin:0 0 8px"><strong>${esc(role)}</strong></p>` : ''}
+    ${moments ? `<ul class="live-moments">${moments}</ul>` : ''}
+    ${shown.length ? `<div class="live-tiles">${shown.map(([l, v]) => `<div><strong>${esc(String(v))}</strong><span>${esc(l)}</span></div>`).join('')}</div>` : '<p class="small muted">No in-game figures for him yet.</p>'}
+    <p class="source">Live: ${[lv.espn ? 'ESPN match feed (line-ups, goals, cards, subs' + (ep && Object.keys(ep.stats || {}).length ? ', player stats' : '') + ')' : null, fp ? 'FPL live data (minutes, tackles, clearances/blocks/interceptions, recoveries, FPL bonus score)' : null].filter(Boolean).join('; ')}. Updated ${esc(fmtTime(lv.espn?.retrievedAt || lv.playersAt || lv.retrievedAt))} Bahrain; the site refreshes about every 5 minutes during the match.</p></section>`;
+}
 
 VIEWS.compare = async (a = '', b = '') => {
   const ps = (await loadSeason('players.json')).players.filter((p) => (p.season.apps || 0) > 0);
@@ -911,6 +956,24 @@ AFTER.match = async (id) => {
 
 const inLiveWindow = (f) => { if (!f?.kickoff || f.friendly) return false; const t = (Date.now() - Date.parse(f.kickoff)) / 60000; return t >= -5 && t <= 155; };
 // Live in-game statistics (API-Football) and per-player figures (FPL live).
+// Goals, cards and substitutions in minute order (live feed).
+function liveTimeline(lv, f, { limit = 0 } = {}) {
+  let evs = (lv?.events || []).filter((e) => ['Goal', 'Card', 'subst'].includes(e.type)).sort((a, b) => (a.minute ?? 0) - (b.minute ?? 0) || (a.extra ?? 0) - (b.extra ?? 0));
+  if (limit) evs = evs.slice(-limit).reverse();
+  if (!evs.length) return '';
+  const icon = (e) => (e.type === 'Goal' ? '⚽' : e.type === 'subst' ? '🔁' : /red/i.test(e.detail) ? '🟥' : '🟨');
+  return `<div class="statlist live-tl" style="margin-top:10px">${evs.map((e) => `<div class="statrow"><span>${icon(e)} ${e.type === 'subst' ? `<strong>${esc(e.player || '?')}</strong> <span class="muted small">on for ${esc(e.assist || '?')}</span>` : `<strong>${esc(e.player || 'Unknown')}</strong>`} <span class="muted small">${e.team === 'spurs' ? 'Spurs' : esc(f.opponent)}${e.type === 'Goal' && e.assist ? ` · assist ${esc(e.assist)}` : ''}${e.type === 'Goal' && e.detail && e.detail !== 'Normal Goal' ? ` · ${esc(e.detail)}` : ''}</span></span><span class="v">${e.minute ?? ''}${e.extra ? `+${e.extra}` : ''}′</span></div>`).join('')}</div>`;
+}
+// While a match is on, re-fetch the given data files every minute and redraw the page.
+function liveReload(files) {
+  clearTimeout(window.__liveT);
+  const hash = location.hash;
+  window.__liveT = setTimeout(async () => {
+    if (location.hash !== hash) return;
+    try { await Promise.all(files.map((x) => loadSeason(x, state.season, { fresh: true, optional: true }))); } catch { /* keep current view */ }
+    if (location.hash === hash) route();
+  }, 60000);
+}
 function livePanel(m) {
   const lv = m.live; const f = m.fixture;
   const windowOpen = inLiveWindow(f);
@@ -923,10 +986,10 @@ function livePanel(m) {
     { label: 'Shots', a: st.spurs.shots, b: st.opp.shots }, { label: 'On target', a: st.spurs.sot, b: st.opp.sot },
     { label: 'Possession', a: st.spurs.possession, b: st.opp.possession, unit: '%' }, { label: 'Corners', a: st.spurs.corners, b: st.opp.corners },
     { label: 'Fouls', a: st.spurs.fouls, b: st.opp.fouls }, { label: 'Yellow cards', a: st.spurs.yc, b: st.opp.yc }, { label: 'Red cards', a: st.spurs.rc, b: st.opp.rc },
-    ...(st.spurs.saves !== undefined ? [{ label: 'Saves', a: st.spurs.saves, b: st.opp.saves }] : []), ...(st.spurs.xg !== undefined && st.spurs.xg !== null ? [{ label: 'xG', a: st.spurs.xg, b: st.opp.xg, dp: 2 }] : []),
+    ...(st.spurs.saves !== undefined ? [{ label: 'Saves', a: st.spurs.saves, b: st.opp.saves }] : []),
+    ...[['passes', 'Passes'], ['passPct', 'Pass accuracy', '%'], ['tackles', 'Tackles won'], ['interceptions', 'Interceptions'], ['clearances', 'Clearances'], ['blocked', 'Shots blocked'], ['crosses', 'Accurate crosses'], ['longBalls', 'Accurate long balls'], ['offsides', 'Offsides']].filter(([k]) => st.spurs[k] !== undefined && st.spurs[k] !== null).map(([k, label, unit]) => ({ label, a: st.spurs[k], b: st.opp[k], unit })), ...(st.spurs.xg !== undefined && st.spurs.xg !== null ? [{ label: 'xG', a: st.spurs.xg, b: st.opp.xg, dp: 2 }] : []),
   ], { right: f.opponent }) : `<p class="small muted">${lv.planBlocked ? 'Team statistics are not available on the free API-Football plan for this match.' : 'Team statistics are waiting for the first update from the provider.'}</p>`;
-  const evs = (lv.events || []).filter((e) => ['Goal', 'Card'].includes(e.type));
-  const evHtml = evs.length ? `<div class="statlist" style="margin-top:10px">${evs.map((e) => `<div class="statrow"><span>${e.type === 'Goal' ? '⚽' : /red/i.test(e.detail) ? '🟥' : '🟨'} <strong>${esc(e.player || 'Unknown')}</strong> <span class="muted small">${e.team === 'spurs' ? 'Spurs' : esc(f.opponent)}${e.type === 'Goal' && e.detail && e.detail !== 'Normal Goal' ? ` · ${esc(e.detail)}` : ''}</span></span><span class="v">${e.minute ?? ''}${e.extra ? `+${e.extra}` : ''}′</span></div>`).join('')}</div>` : '';
+  const evHtml = liveTimeline(lv, f);
   const pl = lv.players || [];
   const plHtml = pl.length ? `<div class="table-wrap" style="margin-top:12px"><table class="live-pl"><thead><tr><th>Spurs player</th><th class="r">Min</th><th class="r">G</th><th class="r">A</th><th class="r">Tkl</th><th class="r">CBI</th><th class="r">Rec</th><th></th></tr></thead><tbody>${pl.map((p) => `<tr><td>${esc(p.name)}</td><td class="r">${p.minutes}</td><td class="r">${p.goals || ''}</td><td class="r">${p.assists || ''}</td><td class="r">${fmt(p.tackles)}</td><td class="r">${fmt(p.cbi)}</td><td class="r">${fmt(p.recoveries)}</td><td>${p.yc ? '🟨' : ''}${p.rc ? '🟥' : ''}</td></tr>`).join('')}</tbody></table></div><p class="tiny faint" style="margin:4px 0 0">G goals · A assists · Tkl tackles · CBI clearances, blocks &amp; interceptions · Rec recoveries.</p>` : '';
   return `<section class="panel section live-panel">${head}${bars}${evHtml}${plHtml}
@@ -1150,7 +1213,7 @@ VIEWS.briefing = async () => {
       <div class="fixture-board"><div class="team">${f.home ? spursCrest('big') : oc(f, 'big')}${esc(f.home ? 'Spurs' : f.opponent)}</div>
         <div class="mid"><div class="clock">${esc(fmtTime(f.kickoff))}</div><div class="vs">${esc(fmtDate(f.kickoff, { weekday: 'long', day: 'numeric', month: 'long' }))}<br>Bahrain time</div></div>
         <div class="team">${f.home ? oc(f, 'big') : spursCrest('big')}${esc(f.home ? f.opponent : 'Spurs')}</div></div>
-      <div class="brief-count" id="brief-count" data-ko="${ko}"></div>
+      ${m.live && (m.live.score || m.live.isLive) && inLiveWindow(f) ? `<div class="brief-live" data-mid="${esc(f.id)}"><div class="bl-score">${m.live.isLive ? '<span class="live-pill">LIVE</span>' : '<span class="live-pill ft">FT</span>'} ${f.home ? `Spurs <strong>${m.live.score?.spurs ?? 0}–${m.live.score?.opp ?? 0}</strong> ${esc(f.opponent)}` : `${esc(f.opponent)} <strong>${m.live.score?.opp ?? 0}–${m.live.score?.spurs ?? 0}</strong> Spurs`}${m.live.isLive && m.live.minute ? ` <span class="bl-min">${m.live.minute}${m.live.extra ? `+${m.live.extra}` : ''}′</span>` : m.live.status === 'HT' ? ' <span class="bl-min">HT</span>' : ''}</div>${liveTimeline(m.live, f, { limit: 4 })}<p class="tiny faint" style="margin:6px 0 0">Updated ${esc(fmtTime(m.live.retrievedAt || m.live.espn?.retrievedAt))} Bahrain · full stats in the Match Centre</p></div>` : `<div class="brief-count" id="brief-count" data-ko="${ko}"></div>`}
       <div class="brief-status">${m.lineups?.spurs ? '<span class="ok">✓ Line-ups confirmed: everything below uses the real XIs</span>' : `<span>Line-ups usually come out about an hour before kick-off (around ${esc(fmtTime(new Date(ko - 3600e3).toISOString()))}). This page updates on its own.</span>`}</div>
       <div class="brief-links"><a class="btn" href="#/manager">Play it in the Matchday Simulator</a><a class="btn ghost" href="#/match/${encodeURIComponent(f.id)}">Match Centre</a></div></section>` : '<h1>Matchday briefing</h1><div class="empty">No upcoming match in the stored fixtures.</div>';
   const bullets = nx?.bullets?.length ? `<section class="panel section"><div class="section-head"><h2>The 60-second brief</h2><span class="label-analysis">From the data</span></div>
@@ -1170,6 +1233,8 @@ VIEWS.briefing = async () => {
   return `${hero}${bullets}${lineups}${forecast}${watch}${stakes}${scout}${reviews}<p class="source">${esc(br?.label || '')}</p>`;
 };
 AFTER.briefing = () => {
+  const bl = document.querySelector('.brief-live[data-mid]');
+  if (bl) liveReload(['briefing.json', `matches/${bl.dataset.mid}.json`, 'fixtures.json']);
   const el = document.getElementById('brief-count'); if (!el) return;
   const ko = Number(el.dataset.ko);
   const tick = () => {
