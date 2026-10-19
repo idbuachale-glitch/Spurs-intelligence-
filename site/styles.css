@@ -762,3 +762,4 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .compact-pl .mg-pos { display: inline-block; min-width: 32px; margin-right: 6px; }
 .compact-pl tr.lp-subs td { border-top: 2px solid var(--line-strong); }
 .compact-pl td.sticky-col { background: var(--panel-solid, var(--bg-2)); }
+.mp-chip em.live { color: var(--loss); font-size: .72rem; } .mp-chip em.up { color: var(--muted); font-size: .78rem; }

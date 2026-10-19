@@ -208,11 +208,11 @@ const matchPoints = (ms) => ms.map((m) => ({
 function matchPicker(list, curId, route) {
   const chron = [...list].sort((a, b) => String(a.kickoff).localeCompare(String(b.kickoff)));
   return `<nav class="mp-strip" aria-label="Choose a match">${chron.map((f) => {
-    const b = badgeOf(f); const sc = f.score ? `${f.score.spurs}–${f.score.opp}` : '';
+    const b = badgeOf(f); const sc = f.status === 'LIVE' ? 'LIVE' : f.score ? `${f.score.spurs}–${f.score.opp}` : fmtTime(f.kickoff);
     const cup = f.friendly ? 'Friendly' : f.competition !== 'Premier League' ? (f.competition || '').replace(/ Cup$/, ' Cup').replace('Champions League', 'UCL').replace('Europa League', 'UEL') : '';
     return `<a class="mp-chip" href="#/${route}/${encodeURIComponent(f.id)}" ${f.id === curId ? 'aria-current="true"' : ''} title="${esc(`${f.home ? 'v' : '@'} ${f.opponent}`)}">
       <span class="mp-badge">${b.url ? `<img src="${esc(b.url)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<i>${esc(b.short)}</i></span>
-      <em class="${f.result === 'W' ? 'w' : f.result === 'L' ? 'l' : 'd'}">${esc(sc)}</em>
+      <em class="${f.status === 'LIVE' ? 'live' : f.result === 'W' ? 'w' : f.result === 'L' ? 'l' : f.result === 'D' ? 'd' : 'up'}">${esc(sc)}</em>
       <small>${f.home ? 'H' : 'A'} · ${esc(fmtDate(f.kickoff, { day: 'numeric', month: 'short' }))}</small>${cup ? `<b>${esc(cup)}</b>` : ''}</a>`;
   }).join('')}</nav>`;
 }
@@ -876,11 +876,16 @@ function leadersPanel(L) {
 // ---------------- Match Centre ----------------
 VIEWS.match = async (id) => {
   const fx = await loadSeason('fixtures.json');
+  // Without a match chosen, open the live match, else the latest result, else the next fixture.
+  const comp = fx.fixtures.filter((f) => !f.friendly);
   if (!id) {
-    const played = fx.fixtures.filter((f) => f.result || f.status === 'LIVE').reverse();
-    const next = fx.fixtures.filter((f) => f.status === 'SCHEDULED' && !f.friendly).slice(0, 3);
-    return `<h1>Match Centre</h1>${next.length ? `<div class="panel" style="padding:0;margin-bottom:16px">${next.map(fixtureRow).join('')}</div>` : ''}<h2>Played</h2><div class="panel" style="padding:0">${played.map(fixtureRow).join('') || '<div class="empty">No matches played yet.</div>'}</div>`;
+    const pick = comp.find((f) => f.status === 'LIVE') || [...comp].reverse().find((f) => f.result) || comp.find((f) => f.status === 'SCHEDULED');
+    if (!pick) return '<h1>Match Centre</h1><div class="empty">No matches in the stored data yet.</div>';
+    id = pick.id; history.replaceState(null, '', `#/match/${encodeURIComponent(id)}`);
   }
+  const nextUp = comp.find((f) => f.status === 'SCHEDULED');
+  const pickerList = fx.fixtures.filter((f) => f.result || f.status === 'LIVE' || f.id === id || f === nextUp);
+  const picker = matchPicker(pickerList, id, 'match');
   const m = await loadSeason(`matches/${id}.json`, state.season, { optional: true });
   if (!m) return '<div class="empty">This match is not in the stored data for the selected season.</div>';
   const f = m.fixture; const d = m.detail; const adv = m.team?.adv;
@@ -889,7 +894,7 @@ VIEWS.match = async (id) => {
   const goals = (d?.shots || []).filter((s) => s.outcome === 'goal').sort((a, b) => a.minute - b.minute);
   const ev = (type) => f.events.filter((e) => e.type === type);
   const notes = postMatch(m);
-  return `<section class="hero"><div class="kicker">${esc(f.competition)}${f.gameweek ? `, gameweek ${f.gameweek}` : ''} · ${esc(statusText[f.status] || f.status)}${f.resultNote ? ` · ${esc(f.resultNote)}` : ''}</div>
+  return `${picker}<section class="hero"><div class="kicker">${esc(f.competition)}${f.gameweek ? `, gameweek ${f.gameweek}` : ''} · ${esc(statusText[f.status] || f.status)}${f.resultNote ? ` · ${esc(f.resultNote)}` : ''}</div>
     <div class="fixture-board"><div class="team">${f.home ? spursCrest('big') : oc(f, 'big')}${esc(L)}</div><div class="mid"><div class="clock">${sc}</div><div class="vs">${esc(fmtDate(f.kickoff, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}, ${esc(fmtTime(f.kickoff))} Bahrain</div></div><div class="team right">${f.home ? oc(f, 'big') : spursCrest('big')}${esc(R)}</div></div>
     <div class="hero-meta"><span>${f.home ? 'Home' : 'Away'}${f.venueName ? ` · ${esc(f.venueName)}` : ''}</span>${f.kickoffHistory?.length ? `<span>Rescheduled (was ${esc(fmtDateTime(f.kickoffHistory[f.kickoffHistory.length - 1].was))})</span>` : ''}${f.verification ? `<span>Score ${f.verification.agrees ? 'confirmed' : 'differs'} by ${esc(f.verification.source)}</span>` : ''}</div></section>
     ${shareButtonHtml(m)}
@@ -940,6 +945,7 @@ function lineupTable(lineup, tab) {
 }
 AFTER.match = async (id) => {
   clearTimeout(window.__liveT);
+  id = id || decodeURIComponent(location.hash.split('/')[2] || '');
   if (window.__ltSide === 'opp') document.querySelector('[data-lt="opp"]')?.click(); // keep the chosen team across the live refresh
   if (!id) return;
   const m = await loadSeason(`matches/${id}.json`, state.season, { optional: true });
