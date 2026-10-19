@@ -19,7 +19,7 @@ import { setMinMinutes, minMinutes, leaguePool, leagueTeamRanks, insights, tacti
 import { STATS, RATES, UNAVAILABLE, NOW_AVAILABLE, POS_LABEL } from './derive/stats.js';
 import { leaders, roundContext, deservedTable } from './derive/leaguecontext.js';
 import { runLive, attachStoredLive } from './derive/live.js';
-import { weeklyReports } from './derive/weekly.js';
+import { buildBrief, checkBrief } from './derive/briefing.js';
 import * as espn from './adapters/espn.js';
 import { lineupEffect, teamIdFor } from './derive/lineups.js';
 import { gameReport } from './derive/gamereport.js';
@@ -449,9 +449,27 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
     ok('simulator', 'Season simulator', { records: { remainingFixtures: sim.remainingFixtures } });
   } catch (err) { fail('simulator', 'Season simulator', err); }
 
-  // ---------------- Weekly report ----------------
-  try { built.files['weekly.json'] = { season, generatedAt: nowIso, ...weeklyReports({ fixtures: built.fixtures, files: built.files, fplFixtures: fixtures.fixtures, teams, spursId, players: built.players, now }) }; }
-  catch (err) { log.error('weekly report failed', { error: String(err.message || err) }); }
+  // ---------------- Matchday briefing ----------------
+  try {
+    const briefDir = S('briefs');
+    const preds = readJson(S('predictions.json'), {});
+    const nextF = built.fixtures.find((f) => (f.status === 'SCHEDULED' || f.status === 'LIVE') && f.kickoff && !f.friendly);
+    let brief = null;
+    if (nextF) {
+      brief = buildBrief({ fixture: nextF, match: built.files[`matches/${nextF.id}.json`], round: built.files['table.json'].round, players: built.players, teamMatches: built.teamMatches });
+      // Saved until kick-off so it can be checked honestly afterwards.
+      if (Date.parse(nextF.kickoff) > now.getTime()) writeJson(path.join(briefDir, `${nextF.id}.json`), { savedAt: nowIso, ...brief });
+    }
+    const past = built.fixtures.filter((f) => f.result && !f.friendly).slice(-6).reverse();
+    const reviews = [];
+    for (const f of past) {
+      const mf = built.files[`matches/${f.id}.json`]; if (!mf) continue;
+      const r = checkBrief({ brief: readJson(path.join(briefDir, `${f.id}.json`), null), prediction: preds[f.id] || null, match: mf });
+      if (r && r.checks.length) reviews.push(r);
+    }
+    built.files['briefing.json'] = { season, generatedAt: nowIso, next: brief, reviews,
+      label: 'Built by fixed rules from the stored data. The watch-list is saved before kick-off and checked against the match statistics afterwards.' };
+  } catch (err) { log.error('briefing failed', { error: String(err.message || err) }); }
 
   // ---------------- Badges for opponents outside the Premier League ----------------
   const badgeFile = S('badges.json');

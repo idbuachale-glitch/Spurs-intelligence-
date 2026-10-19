@@ -7,7 +7,7 @@ import { shareButtonHtml, bindShare, makeGraphic } from './share.js';
 
 const NAV = [
   ['overview', 'Overview', 'i-home'], ['fixtures', 'Fixtures & results', 'i-cal'], ['players', 'Player Lab', 'i-user'], ['team', 'Team statistics', 'i-chart'],
-  ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['injuries', 'Injury tracker', 'i-medic'], ['weekly', 'Weekly report', 'i-doc'], ['replays', 'Goal replays', 'i-replay'], ['graphic', 'Match graphic', 'i-share'], ['table', 'League table', 'i-table'],
+  ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['injuries', 'Injury tracker', 'i-medic'], ['briefing', 'Matchday briefing', 'i-doc'], ['replays', 'Goal replays', 'i-replay'], ['graphic', 'Match graphic', 'i-share'], ['table', 'League table', 'i-table'],
   ['breakdown', 'Match breakdown', 'i-spark'], ['simulator', 'Season forecast', 'i-dice'], ['manager', 'Matchday Simulator', 'i-whistle'], ['style', 'De Zerbi tracker', 'i-trend'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
 ];
 const BOTTOM = ['overview', 'breakdown', 'players', 'fixtures'];
@@ -93,6 +93,7 @@ async function route() {
     view.querySelectorAll('table[data-sortable]').forEach(sortableTable);
     AFTER[k]?.(...args.map(decodeURIComponent));
     window.scrollTo(0, 0);
+    view.querySelectorAll('.mp-strip').forEach((st) => { const c = st.querySelector('[aria-current]') || st.lastElementChild; if (c) st.scrollLeft = c.offsetLeft - st.clientWidth / 2 + c.clientWidth / 2; });
     document.title = `${(NAV.find((n) => n[0] === top) || [, 'Spurs Intelligence'])[1]} · Spurs Intelligence`;
   } catch (e) {
     console.error(e);
@@ -203,6 +204,18 @@ const matchPoints = (ms) => ms.map((m) => ({
   crest: badgeOf(m).url,
   links: [['Match breakdown', `#/breakdown/${encodeURIComponent(m.matchId)}`], ['Match Centre', `#/match/${encodeURIComponent(m.matchId)}`]],
 }));
+// Match picker: a swipeable row of opponent badges (oldest left, newest right). Tap to open.
+function matchPicker(list, curId, route) {
+  const chron = [...list].sort((a, b) => String(a.kickoff).localeCompare(String(b.kickoff)));
+  return `<nav class="mp-strip" aria-label="Choose a match">${chron.map((f) => {
+    const b = badgeOf(f); const sc = f.score ? `${f.score.spurs}–${f.score.opp}` : '';
+    const cup = f.friendly ? 'Friendly' : f.competition !== 'Premier League' ? (f.competition || '').replace(/ Cup$/, ' Cup').replace('Champions League', 'UCL').replace('Europa League', 'UEL') : '';
+    return `<a class="mp-chip" href="#/${route}/${encodeURIComponent(f.id)}" ${f.id === curId ? 'aria-current="true"' : ''} title="${esc(`${f.home ? 'v' : '@'} ${f.opponent}`)}">
+      <span class="mp-badge">${b.url ? `<img src="${esc(b.url)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<i>${esc(b.short)}</i></span>
+      <em class="${f.result === 'W' ? 'w' : f.result === 'L' ? 'l' : 'd'}">${esc(sc)}</em>
+      <small>${f.home ? 'H' : 'A'} · ${esc(fmtDate(f.kickoff, { day: 'numeric', month: 'short' }))}</small>${cup ? `<b>${esc(cup)}</b>` : ''}</a>`;
+  }).join('')}</nav>`;
+}
 const VIEWS = {};
 const AFTER = {};
 
@@ -1023,8 +1036,7 @@ VIEWS.breakdown = async (id) => {
   const m = await loadSeason(`matches/${cur.id}.json`, state.season, { optional: true });
   const b = m?.breakdown;
   const idx = played.indexOf(cur);
-  const sel = `<div class="filters"><select class="ctl" id="bd-match" aria-label="Choose a match" style="flex:1 1 100%;min-width:0">${played.map((f) => `<option value="${esc(f.id)}" ${f.id === cur.id ? 'selected' : ''}>${esc(fmtDate(f.kickoff, { day: 'numeric', month: 'short' }))} · ${f.home ? 'v' : '@'} ${esc(f.opponent)} ${f.score.spurs}–${f.score.opp} (${esc(f.competition)})</option>`).join('')}</select>
-    <a class="btn ghost" style="flex:1;text-align:center" href="#/breakdown/${encodeURIComponent((played[idx + 1] || cur).id)}" aria-label="Previous match">‹ Older match</a><a class="btn ghost" style="flex:1;text-align:center" href="#/breakdown/${encodeURIComponent((played[idx - 1] || cur).id)}" aria-label="Next match">Newer match ›</a></div>`;
+  const sel = matchPicker(played, cur.id, 'breakdown');
   if (!m || !b) return `<h1>Match breakdown</h1>${sel}<div class="empty">No breakdown is available for this match yet.</div>`;
   const f = m.fixture; const d = m.detail;
   const L = f.home ? 'Spurs' : f.opponent; const R = f.home ? f.opponent : 'Spurs';
@@ -1126,32 +1138,50 @@ VIEWS.injuries = async () => {
     <p class="source">From the Premier League's official availability flags and news (via the FPL API), checked every 20 minutes. Return dates are the club's estimates and often move; matches are counted as missed when they fall before the expected return date. Cup suspensions may not be listed.</p>`;
 };
 
-// ---------------- Weekly report ----------------
-VIEWS.weekly = async (key) => {
-  const [wk, ps] = await Promise.all([loadSeason('weekly.json', state.season, { optional: true }), loadSeason('players.json')]);
-  if (!wk?.weeks?.length) return '<h1>Weekly report</h1><div class="empty">The first weekly report appears after the next data update.</div>';
-  const w = wk.weeks.find((x) => x.key === key) || wk.weeks.find((x) => !x.current) || wk.weeks[0];
-  const range = `${fmtDate(w.start, { day: 'numeric', month: 'short' })} – ${fmtDate(w.end, { day: 'numeric', month: 'short' })}`;
-  const pById = new Map(ps.players.map((p) => [p.id, p]));
-  const t = w.table || {};
-  const mv = t.before && t.after && t.after.played > t.before.played ? t.before.position - t.after.position : null;
-  const resRow = (f) => `<a class="fx" href="#/match/${encodeURIComponent(f.id)}"><div class="when">${esc(fmtDate(f.kickoff))}<br><span class="faint">${esc(fmtTime(f.kickoff))}</span></div>
-    <div><div class="who">${oc(f)}${f.home ? '' : '@ '}${esc(f.opponent)}${f.home ? ' (H)' : ''}</div><div class="comp">${esc(f.competition)}</div></div>
-    <div class="scorebox">${f.score ? `${f.score.spurs}–${f.score.opp} ${resultChip(f.result, true)}` : f.difficulty ? `<span class="diff ${f.difficulty.level}"></span><span class="diff-pct">${f.difficulty.win}%</span>` : ''}</div></a>`;
-  return `<div class="section-head"><h1>Weekly report</h1><select class="ctl" id="wk-sel" aria-label="Week">${wk.weeks.map((x) => `<option value="${x.key}" ${x.key === w.key ? 'selected' : ''}>${esc(fmtDate(x.start, { day: 'numeric', month: 'short' }))} – ${esc(fmtDate(x.end, { day: 'numeric', month: 'short' }))}${x.current ? ' (this week so far)' : ''}</option>`).join('')}</select></div>
-    <section class="panel weekly-lead"><div class="kicker small muted">${w.current ? 'This week so far' : 'Week of'} ${esc(range)}</div><p class="weekly-summary">${esc(w.summary)}</p></section>
-    <div class="grid three section">
-      <div class="panel stat-tile"><span class="lbl">Results</span><span class="big">${w.record.played ? `${w.record.w}W ${w.record.d}D ${w.record.l}L` : '—'}</span><span class="small muted">${w.record.played ? `Goals ${w.record.gf}–${w.record.ga}` : 'No match played'}</span></div>
-      <div class="panel stat-tile"><span class="lbl">League position</span><span class="big">${t.after ? ordinal(t.after.position) : '—'}</span><span class="small muted">${mv === null ? (t.after ? `${t.after.points} pts` : '') : mv > 0 ? `<span class="mv-up">▲ ${mv}</span> from ${ordinal(t.before.position)}` : mv < 0 ? `<span class="mv-down">▼ ${-mv}</span> from ${ordinal(t.before.position)}` : 'No change'}${t.after ? ` · ${t.after.points} pts` : ''}</span></div>
-      <div class="panel stat-tile"><span class="lbl">Next week</span><span class="big">${w.next.length || '—'}</span><span class="small muted">${w.next.length ? `match${w.next.length > 1 ? 'es' : ''}` : 'No fixtures'}</span></div>
-    </div>
-    ${w.results.length ? `<section class="section"><h2>Results</h2><div class="panel" style="padding:0">${w.results.map(resRow).join('')}</div></section>` : ''}
-    ${w.stars.length ? `<section class="section"><h2>Standout performers</h2><div class="grid three">${w.stars.map((x, i) => { const p = pById.get(x.playerId); return `<a class="panel wk-star" href="#/player/${x.playerId}"><span class="wk-rank">${i + 1}</span>${p ? photoHtml(p) : ''}<div><strong>${esc(x.name)}</strong><div class="small muted">${esc(x.line)}</div><div class="tiny faint">${x.minutes} min · ${x.matches} match${x.matches > 1 ? 'es' : ''}</div></div></a>`; }).join('')}</div></section>` : ''}
-    ${w.teamNews?.length ? `<section class="section"><div class="section-head"><h2>Team news</h2><a class="small" href="#/injuries">Injury tracker →</a></div><div class="panel"><div class="statlist">${w.teamNews.map((n) => `<div class="statrow"><span><strong>${esc(n.name)}</strong>${n.newThisWeek ? ' <span class="mg-doubt">new</span>' : ''} <span class="small muted">${esc(n.news || '')}</span></span><span class="v">${n.status === 'd' ? `${n.chance ?? '?'}%` : n.status === 's' ? 'Suspended' : 'Out'}</span></div>`).join('')}</div></div></section>` : ''}
-    ${w.next.length ? `<section class="section"><h2>Coming up</h2><div class="panel" style="padding:0">${w.next.map(resRow).join('')}</div></section>` : ''}
-    <p class="source">${esc(wk.label)} Standouts are ranked by goals, assists, xG and xA, and the Premier League's bonus-points score, with saves and defensive actions counted for keepers and defenders.</p>`;
+// ---------------- Matchday briefing ----------------
+const BRIEF_ICON = { forecast: '📊', stakes: '🏆', opponent: '🔎', threat: '⚠️', edge: '✅', worry: '🚩', news: '🩹' };
+VIEWS.briefing = async () => {
+  const [br, table] = await Promise.all([loadSeason('briefing.json', state.season, { optional: true }), loadSeason('table.json')]);
+  const nx = br?.next;
+  const m = nx ? await loadSeason(`matches/${nx.matchId}.json`, state.season, { optional: true }) : null;
+  const f = m?.fixture;
+  const ko = f ? Date.parse(f.kickoff) : null;
+  const hero = f ? `<section class="hero brief-hero"><div class="kicker">${esc(f.competition)}${f.gameweek ? ` · gameweek ${f.gameweek}` : ''} · ${f.home ? 'Home' : 'Away'}</div>
+      <div class="fixture-board"><div class="team">${f.home ? spursCrest('big') : oc(f, 'big')}${esc(f.home ? 'Spurs' : f.opponent)}</div>
+        <div class="mid"><div class="clock">${esc(fmtTime(f.kickoff))}</div><div class="vs">${esc(fmtDate(f.kickoff, { weekday: 'long', day: 'numeric', month: 'long' }))}<br>Bahrain time</div></div>
+        <div class="team">${f.home ? oc(f, 'big') : spursCrest('big')}${esc(f.home ? f.opponent : 'Spurs')}</div></div>
+      <div class="brief-count" id="brief-count" data-ko="${ko}"></div>
+      <div class="brief-status">${m.lineups?.spurs ? '<span class="ok">✓ Line-ups confirmed: everything below uses the real XIs</span>' : `<span>Line-ups usually come out about an hour before kick-off (around ${esc(fmtTime(new Date(ko - 3600e3).toISOString()))}). This page updates on its own.</span>`}</div>
+      <div class="brief-links"><a class="btn" href="#/manager">Play it in the Matchday Simulator</a><a class="btn ghost" href="#/match/${encodeURIComponent(f.id)}">Match Centre</a></div></section>` : '<h1>Matchday briefing</h1><div class="empty">No upcoming match in the stored fixtures.</div>';
+  const bullets = nx?.bullets?.length ? `<section class="panel section"><div class="section-head"><h2>The 60-second brief</h2><span class="label-analysis">From the data</span></div>
+      <ul class="brief-list">${nx.bullets.map((b) => `<li><span class="bi">${BRIEF_ICON[b.kind] || '•'}</span><span>${esc(b.text)}</span></li>`).join('')}</ul></section>` : '';
+  const watch = nx?.watch?.length ? `<section class="section"><div class="section-head"><h2>What to watch</h2><span class="small muted">checked after the match</span></div>
+      <div class="grid two">${nx.watch.map((w) => `<div class="panel watch-card"><h3>${esc(w.title)}</h3><p class="small">${esc(w.text)}</p><span class="watch-target">${w.expect.kind === 'approx' ? `About ${w.expect.dp ? Number(w.expect.value).toFixed(w.expect.dp) : w.expect.value}${esc(w.expect.unit || '')}` : w.expect.kind === 'atmost' ? `Target: ${w.key === 'dangerMan' ? 'no goal or assist' : `${w.expect.dp ? Number(w.expect.value).toFixed(w.expect.dp) : w.expect.value}${esc(w.expect.unit || '')} or fewer`}` : `Target: ${w.expect.value}${esc(w.expect.unit || '')} or more`}</span></div>`).join('')}</div></section>` : '';
+  const lineups = m ? (m.lineups?.spurs ? lineupsPanel(m) : '') : '';
+  const forecast = m?.forecast ? forecastHtml(m.forecast) : '';
+  const stakes = table.round && f && table.round.spursMatch?.opponentTeamId === f.opponentTeamId ? roundPanel(table.round) : '';
+  const scout = m?.preview ? scoutHtml({ ...m.preview, forecast: null }, f) : '';
+  const V = { held: ['✓', 'held', 'As expected'], better: ['↑', 'better', 'Better than expected'], worse: ['↓', 'worse', 'Worse than expected'], missed: ['✗', 'missed', 'Not as expected'], neutral: ['•', 'neutral', ''], unknown: ['?', 'neutral', 'Not measured'] };
+  const reviews = br?.reviews?.length ? `<section class="section"><div class="section-head"><h2>How the last briefs held up</h2><span class="small muted">accountability</span></div>
+      ${br.reviews.map((r, i) => `<details class="panel review"${i === 0 ? ' open' : ''}><summary><span class="rv-team">${crestOf(r.opponent, r.opponentTeamId)}${r.home ? 'v' : '@'} ${esc(r.opponent)}</span><span class="ic-res ${r.result === 'W' ? 'w' : r.result === 'L' ? 'l' : 'd'}">${esc(r.result)} ${r.score.spurs}–${r.score.opp}</span><span class="rv-score">${r.held}/${r.of} held</span></summary>
+        ${r.checks.map((c) => { const v = V[c.verdict] || V.neutral; return `<div class="rv-row"><span class="rv-mark ${v[1]}">${v[0]}</span><div><strong>${esc(c.title)}</strong>${v[2] ? ` <span class="rv-tag ${v[1]}">${v[2]}</span>` : ''}<p class="small muted">${esc(c.text)}</p><p class="small">${esc(c.actual)}</p></div></div>`; }).join('')}
+        ${r.briefSaved ? '' : '<p class="tiny faint">This match was played before the briefing page existed, so only the saved pre-match forecast can be checked.</p>'}
+        <div class="ic-links"><a href="#/style/${encodeURIComponent(r.matchId)}">How Spurs played →</a><a href="#/breakdown/${encodeURIComponent(r.matchId)}">Match breakdown →</a></div></details>`).join('')}</section>` : '';
+  return `${hero}${bullets}${lineups}${forecast}${watch}${stakes}${scout}${reviews}<p class="source">${esc(br?.label || '')}</p>`;
 };
-AFTER.weekly = () => { document.getElementById('wk-sel')?.addEventListener('change', (e) => { location.hash = `#/weekly/${e.target.value}`; }); };
+AFTER.briefing = () => {
+  const el = document.getElementById('brief-count'); if (!el) return;
+  const ko = Number(el.dataset.ko);
+  const tick = () => {
+    if (!document.body.contains(el)) { clearInterval(t); return; }
+    const d = ko - Date.now();
+    if (d <= 0) { el.textContent = d > -2.5 * 3600e3 ? 'Kicked off' : ''; return; }
+    const dd = Math.floor(d / 86400e3); const hh = Math.floor((d % 86400e3) / 3600e3); const mm = Math.floor((d % 3600e3) / 60e3);
+    el.textContent = `Kick-off in ${dd ? `${dd}d ` : ''}${hh}h ${String(mm).padStart(2, '0')}m`;
+  };
+  const t = setInterval(tick, 30e3); tick();
+};
+VIEWS.weekly = VIEWS.briefing; AFTER.weekly = AFTER.briefing; // old links
 
 // ---------------- Goal replays & match graphic (own pages) ----------------
 async function playedWithShots() {
@@ -1166,7 +1196,7 @@ VIEWS.replays = async (id) => {
   const m = await loadSeason(`matches/${cur.id}.json`, state.season, { optional: true });
   const goals = (m?.detail?.shots || []).filter((s) => s.outcome === 'goal');
   return `<div class="section-head"><h1>Goal replays</h1><span class="muted small">Every chance, played back in order</span></div>
-    <div class="filters">${matchSelect(list, cur.id, 'rp-match')}</div>
+    ${matchPicker(list, cur.id, 'replays')}
     <section class="hero" style="padding:16px"><div class="fixture-board"><div class="team">${cur.home ? spursCrest('big') : oc(cur, 'big')}${esc(cur.home ? 'Spurs' : cur.opponent)}</div><div class="mid"><div class="clock">${cur.home ? `${cur.score.spurs}–${cur.score.opp}` : `${cur.score.opp}–${cur.score.spurs}`}</div><div class="vs">${esc(fmtDate(cur.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}</div></div><div class="team right">${cur.home ? oc(cur, 'big') : spursCrest('big')}${esc(cur.home ? cur.opponent : 'Spurs')}</div></div>
       ${goals.length ? `<p class="small" style="margin:8px 0 0;text-align:center">${goals.map((g) => `⚽ ${esc(g.player || (g.candidates ? g.candidates.join(' or ') : `${g.team === 'spurs' ? 'Spurs' : cur.opponent} goal`))} ${g.minute}${g.added ? `+${g.added}` : ''}′`).join(' · ')}</p>` : ''}</section>
     ${m ? replayHtml(m) || '<div class="empty section">Not enough shot data for this match.</div>' : ''}
@@ -1185,7 +1215,7 @@ VIEWS.graphic = async (id) => {
   if (!list.length) return '<h1>Match graphic</h1><div class="empty">A graphic can be made once Spurs have played.</div>';
   const cur = list.find((f) => f.id === id) || list[0];
   return `<div class="section-head"><h1>Match graphic</h1><span class="muted small">Ready for WhatsApp or Instagram</span></div>
-    <div class="filters">${matchSelect(list, cur.id, 'gr-match')}</div>
+    ${matchPicker(list, cur.id, 'graphic')}
     <div class="panel gr-wrap"><div id="gr-preview" class="gr-preview"><div class="skeleton" style="height:100%"></div></div></div>
     <div class="mgr-actions section"><button class="btn" id="gr-share">📤 Share</button><a class="btn ghost" id="gr-save" download>⬇ Save image</a></div>
     <p class="source">Score, xG, shot map and key stats from the stored match data (FotMob via FPL Core Insights; FPL for players). Star player = most goals, assists, xG and xA, plus the Premier League's bonus-points score. Club crests appear when the Premier League's image server allows them in an image.</p>`;

@@ -705,3 +705,44 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .gr-table th, .gr-table td { padding: 7px 4px; font-size: 0.82rem; }
 .gr-table td:first-child { min-width: 0; width: 42%; }
 .gr-chip small { font-size: 0.66rem; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+
+/* Badge match picker */
+.mp-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 12px; margin-bottom: 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; position: relative; }
+.mp-strip::-webkit-scrollbar { display: none; }
+.mp-chip { flex: none; scroll-snap-align: center; display: flex; flex-direction: column; align-items: center; gap: 3px; width: 70px; padding: 9px 4px 7px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); text-decoration: none; position: relative; }
+.mp-chip:hover { border-color: var(--line-strong); text-decoration: none; }
+.mp-badge { width: 36px; height: 36px; display: grid; place-items: center; position: relative; }
+.mp-badge img { width: 36px; height: 36px; object-fit: contain; position: relative; z-index: 1; }
+.mp-badge i { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; background: var(--bg-2); font-style: normal; font-size: 0.66rem; font-weight: 700; color: var(--muted); }
+.mp-badge img + i { visibility: hidden; }
+.mp-chip em { font-style: normal; font-weight: 700; font-size: 0.85rem; font-family: var(--display); }
+.mp-chip em.w { color: var(--win); } .mp-chip em.l { color: var(--loss); } .mp-chip em.d { color: var(--draw); }
+.mp-chip small { font-size: 0.64rem; color: var(--faint); white-space: nowrap; }
+.mp-chip b { position: absolute; top: -6px; right: -2px; font-size: 0.56rem; font-weight: 700; padding: 1px 5px; border-radius: 6px; background: var(--bg-2); border: 1px solid var(--line-strong); color: var(--cyan); white-space: nowrap; max-width: 66px; overflow: hidden; text-overflow: ellipsis; }
+.mp-chip[aria-current] { border-color: var(--cyan); background: color-mix(in srgb, var(--cyan) 10%, var(--panel)); box-shadow: 0 0 0 1px var(--cyan) inset, 0 0 18px rgba(60, 232, 255, 0.15); }
+.mp-strip { padding-top: 10px; }
+
+/* Matchday briefing */
+.brief-count { text-align: center; font-family: var(--display); font-size: 1.1rem; color: var(--cyan); margin-top: 6px; }
+.brief-status { text-align: center; font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+.brief-status .ok { color: var(--win); font-weight: 600; }
+.brief-links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
+.brief-list { list-style: none; margin: 0; padding: 0; }
+.brief-list li { display: grid; grid-template-columns: 28px 1fr; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); line-height: 1.45; }
+.brief-list li:first-child { border-top: 0; }
+.brief-list .bi { font-size: 1.05rem; }
+.watch-card h3 { margin: 0 0 6px; }
+.watch-target { display: inline-block; margin-top: 4px; font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--cyan); }
+.review { margin-bottom: 10px; padding: 0; }
+.review summary { display: flex; align-items: center; gap: 10px; padding: 14px; cursor: pointer; list-style: none; }
+.review summary::-webkit-details-marker { display: none; }
+.review .rv-team { flex: 1; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.review .rv-score { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+.review > :not(summary) { margin-left: 14px; margin-right: 14px; }
+.review .ic-links { padding-bottom: 14px; }
+.rv-row { display: grid; grid-template-columns: 28px 1fr; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+.rv-row p { margin: 3px 0 0; }
+.rv-mark { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 0.85rem; background: var(--bg-2); }
+.rv-mark.held, .rv-mark.better { color: var(--win); } .rv-mark.missed, .rv-mark.worse { color: var(--loss); } .rv-mark.neutral { color: var(--muted); }
+.rv-tag { font-size: 0.7rem; padding: 1px 7px; border-radius: 6px; background: var(--bg-2); }
+.rv-tag.held, .rv-tag.better { color: var(--win); } .rv-tag.missed, .rv-tag.worse { color: var(--loss); }
