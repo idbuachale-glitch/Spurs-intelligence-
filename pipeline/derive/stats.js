@@ -107,7 +107,7 @@ export const UNAVAILABLE = {
   defensive: [],
   goalkeeping: [],
   identity: ['Height', 'Preferred foot', 'Contract expiry'],
-  team: ['Pressing intensity (PPDA)', 'Formation'],
+  team: ['Location-based PPDA (an estimate is shown)', 'Formation'],
 };
 
 // Statistics that once looked unavailable but are now collected, and where they appear.
