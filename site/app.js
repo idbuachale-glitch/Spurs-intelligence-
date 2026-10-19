@@ -3,11 +3,11 @@ import { lineChart, pairBars, shotMap, barList, xgRace, momentumChart, shotZoneP
 import { answer, renderAnswer, suggestions } from './analyst.js';
 import { managerView, managerAfter } from './manager.js';
 import { replayHtml, bindReplay } from './replay.js';
-import { shareButtonHtml, bindShare } from './share.js';
+import { shareButtonHtml, bindShare, makeGraphic } from './share.js';
 
 const NAV = [
   ['overview', 'Overview', 'i-home'], ['fixtures', 'Fixtures & results', 'i-cal'], ['players', 'Player Lab', 'i-user'], ['team', 'Team statistics', 'i-chart'],
-  ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['injuries', 'Injury tracker', 'i-medic'], ['weekly', 'Weekly report', 'i-doc'], ['table', 'League table', 'i-table'],
+  ['tactics', 'Tactical analysis', 'i-board'], ['video', 'Video Evidence Room', 'i-play'], ['squad', 'Squad planner', 'i-squad'], ['injuries', 'Injury tracker', 'i-medic'], ['weekly', 'Weekly report', 'i-doc'], ['replays', 'Goal replays', 'i-replay'], ['graphic', 'Match graphic', 'i-share'], ['table', 'League table', 'i-table'],
   ['breakdown', 'Match breakdown', 'i-spark'], ['simulator', 'Season simulator', 'i-dice'], ['manager', 'Matchday Simulator', 'i-whistle'], ['style', 'De Zerbi tracker', 'i-trend'], ['match', 'Match Centre', 'i-ball'], ['sources', 'Data sources & settings', 'i-gear'],
 ];
 const BOTTOM = ['overview', 'breakdown', 'players', 'fixtures'];
@@ -1128,6 +1128,63 @@ VIEWS.weekly = async (key) => {
     <p class="source">${esc(wk.label)} Standouts are ranked by goals, assists, xG and xA, and the Premier League's bonus-points score, with saves and defensive actions counted for keepers and defenders.</p>`;
 };
 AFTER.weekly = () => { document.getElementById('wk-sel')?.addEventListener('change', (e) => { location.hash = `#/weekly/${e.target.value}`; }); };
+
+// ---------------- Goal replays & match graphic (own pages) ----------------
+async function playedWithShots() {
+  const fx = await loadSeason('fixtures.json');
+  return fx.fixtures.filter((f) => f.result && f.hasDetail && !f.friendly).sort((a, b) => b.kickoff.localeCompare(a.kickoff));
+}
+const matchSelect = (list, cur, id) => `<select class="ctl" id="${id}" aria-label="Match" style="flex:1 1 100%;min-width:0">${list.map((f) => `<option value="${esc(f.id)}" ${f.id === cur ? 'selected' : ''}>${esc(fmtDate(f.kickoff, { day: 'numeric', month: 'short' }))} · ${f.home ? 'v' : '@'} ${esc(f.opponent)} ${f.score ? `${f.score.spurs}–${f.score.opp}` : ''} (${esc(f.competition === 'Premier League' ? 'PL' : f.competition)})</option>`).join('')}</select>`;
+VIEWS.replays = async (id) => {
+  const list = await playedWithShots();
+  if (!list.length) return '<h1>Goal replays</h1><div class="empty">Replays appear once a match has shot data.</div>';
+  const cur = list.find((f) => f.id === id) || list[0];
+  const m = await loadSeason(`matches/${cur.id}.json`, state.season, { optional: true });
+  const goals = (m?.detail?.shots || []).filter((s) => s.outcome === 'goal');
+  return `<div class="section-head"><h1>Goal replays</h1><span class="muted small">Every chance, played back in order</span></div>
+    <div class="filters">${matchSelect(list, cur.id, 'rp-match')}</div>
+    <section class="hero" style="padding:16px"><div class="fixture-board"><div class="team">${cur.home ? spursCrest('big') : oc(cur, 'big')}${esc(cur.home ? 'Spurs' : cur.opponent)}</div><div class="mid"><div class="clock">${cur.home ? `${cur.score.spurs}–${cur.score.opp}` : `${cur.score.opp}–${cur.score.spurs}`}</div><div class="vs">${esc(fmtDate(cur.kickoff, { weekday: 'short', day: 'numeric', month: 'short' }))}</div></div><div class="team right">${cur.home ? oc(cur, 'big') : spursCrest('big')}${esc(cur.home ? cur.opponent : 'Spurs')}</div></div>
+      ${goals.length ? `<p class="small" style="margin:8px 0 0;text-align:center">${goals.map((g) => `⚽ ${esc(g.player || `${g.team === 'spurs' ? 'Spurs' : cur.opponent} goal`)} ${g.minute}${g.added ? `+${g.added}` : ''}′`).join(' · ')}</p>` : ''}</section>
+    ${m ? replayHtml(m) || '<div class="empty section">Not enough shot data for this match.</div>' : ''}
+    <p class="small muted"><a href="#/match/${encodeURIComponent(cur.id)}">Full Match Centre →</a></p>`;
+};
+AFTER.replays = async (id) => {
+  document.getElementById('rp-match')?.addEventListener('change', (e) => { location.hash = `#/replays/${encodeURIComponent(e.target.value)}`; });
+  const list = await playedWithShots(); const cur = list.find((f) => f.id === id) || list[0];
+  if (!cur) return;
+  const m = await loadSeason(`matches/${cur.id}.json`, state.season, { optional: true });
+  if (m) bindReplay(m);
+};
+VIEWS.graphic = async (id) => {
+  const fx = await loadSeason('fixtures.json');
+  const list = fx.fixtures.filter((f) => f.result && f.score && !f.friendly).sort((a, b) => b.kickoff.localeCompare(a.kickoff));
+  if (!list.length) return '<h1>Match graphic</h1><div class="empty">A graphic can be made once Spurs have played.</div>';
+  const cur = list.find((f) => f.id === id) || list[0];
+  return `<div class="section-head"><h1>Match graphic</h1><span class="muted small">Ready for WhatsApp or Instagram</span></div>
+    <div class="filters">${matchSelect(list, cur.id, 'gr-match')}</div>
+    <div class="panel gr-wrap"><div id="gr-preview" class="gr-preview"><div class="skeleton" style="height:100%"></div></div></div>
+    <div class="mgr-actions section"><button class="btn" id="gr-share">📤 Share</button><a class="btn ghost" id="gr-save" download>⬇ Save image</a></div>
+    <p class="source">Score, xG, shot map and key stats from the stored match data (FotMob via FPL Core Insights; FPL for players). Star player = most goals, assists, xG and xA, plus the Premier League's bonus-points score. Club crests appear when the Premier League's image server allows them in an image.</p>`;
+};
+AFTER.graphic = async (id) => {
+  document.getElementById('gr-match')?.addEventListener('change', (e) => { location.hash = `#/graphic/${encodeURIComponent(e.target.value)}`; });
+  const fx = await loadSeason('fixtures.json');
+  const list = fx.fixtures.filter((f) => f.result && f.score && !f.friendly).sort((a, b) => b.kickoff.localeCompare(a.kickoff));
+  const cur = list.find((f) => f.id === id) || list[0]; if (!cur) return;
+  const m = await loadSeason(`matches/${cur.id}.json`, state.season, { optional: true }); if (!m) return;
+  let blob;
+  try { blob = await makeGraphic(m); } catch (e) { document.getElementById('gr-preview').innerHTML = `<div class="banner error">The graphic could not be made: ${esc(e.message)}</div>`; return; }
+  const url = URL.createObjectURL(blob);
+  const name = `spurs-${cur.home ? 'v' : 'at'}-${cur.opponent.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${cur.score.spurs}-${cur.score.opp}.png`;
+  const prev = document.getElementById('gr-preview'); if (!prev) return;
+  prev.innerHTML = `<img src="${url}" alt="Match graphic for Spurs ${cur.score.spurs}–${cur.score.opp} ${esc(cur.opponent)}">`;
+  const save = document.getElementById('gr-save'); save.href = url; save.download = name;
+  document.getElementById('gr-share').addEventListener('click', async () => {
+    const file = new File([blob], name, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: `Spurs ${cur.score.spurs}–${cur.score.opp} ${cur.opponent}` }); } catch { /* cancelled */ } }
+    else save.click();
+  });
+};
 
 VIEWS.manager = managerView;
 AFTER.manager = managerAfter;

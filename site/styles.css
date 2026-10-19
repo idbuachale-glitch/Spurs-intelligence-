@@ -623,3 +623,8 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .rp-out.goal { color: var(--win); font-weight: 700; } .rp-out.save { color: var(--warn); } .rp-out.miss, .rp-out.block { color: var(--muted); } .rp-out.post { color: var(--draw); }
 .rp-ctrl { display: flex; gap: 8px; justify-content: center; align-items: center; }
 .rp-ctrl .btn { padding: 6px 14px; }
+
+/* Match graphic page */
+.gr-wrap { padding: 10px; }
+.gr-preview { aspect-ratio: 1080 / 1350; max-width: 460px; margin: 0 auto; border-radius: 12px; overflow: hidden; }
+.gr-preview img { width: 100%; height: 100%; display: block; }

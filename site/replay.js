@@ -60,6 +60,7 @@ export function bindReplay(m) {
   const scoreAt = (k) => { let s = 0; let o = 0; for (const x of all.slice(0, all.indexOf(list[k]) + 1)) if (x.outcome === 'goal') { if (x.team === 'spurs') s++; else o++; } return [s, o]; };
   const marks = () => { $('rp-marks').innerHTML = list.slice(0, i).map((sh) => { const p = place(sh); const r = 2.5 + Math.sqrt(sh.xg || 0.01) * 11; return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" class="rp-mark ${sh.team}${sh.outcome === 'goal' ? ' goal' : ''}"/>`; }).join(''); };
   const show = (k, animate = true) => {
+    if (!document.body.contains(root)) { clearTimeout(timer); cancelAnimationFrame(raf); return; } // page was left
     cancelAnimationFrame(raf); clearTimeout(timer); banner.hidden = true;
     i = Math.max(0, Math.min(list.length - 1, k)); const sh = list[i];
     marks();
@@ -71,7 +72,7 @@ export function bindReplay(m) {
     const min = `${sh.minute}${sh.added ? `+${sh.added}` : ''}′`;
     $('rp-caption').innerHTML = `<strong>${min}</strong> ${sh.player ? `${esc(sh.player)} (${sh.team === 'spurs' ? 'Spurs' : esc(m.fixture.opponent)})` : `${sh.team === 'spurs' ? 'Spurs' : esc(m.fixture.opponent)} shot (player not recorded)`} · ${esc((sh.situation || '').replace(/-/g, ' '))}${sh.bodyPart ? ` · ${esc(sh.bodyPart.replace(/-/g, ' '))}` : ''} · <span class="rp-out ${sh.outcome}">${esc(OUT[sh.outcome] || sh.outcome || '')}</span>`;
     $('rp-count').textContent = `${i + 1} / ${list.length}`;
-    const finish = () => {
+    const finish = () => { if (!document.body.contains(root)) return;
       set(ball, { cx: t.x, cy: t.y });
       const [s2, o2] = scoreAt(i); $('rp-score').textContent = `${s2} – ${o2}`;
       if (sh.outcome === 'goal') { banner.textContent = `GOAL! ${sh.player || (sh.team === 'spurs' ? 'Spurs' : m.fixture.opponent)}`; banner.className = `rp-banner ${sh.team}`; banner.hidden = false; }
@@ -80,7 +81,7 @@ export function bindReplay(m) {
     if (!animate) { finish(); return; }
     set(ball, { cx: p.x, cy: p.y });
     const t0 = performance.now(); const dur = 650 + Math.hypot(t.x - p.x, t.y - p.y) * 1.2;
-    const step = (now) => { const k2 = Math.min(1, (now - t0) / dur); const e = 1 - (1 - k2) ** 3; set(ball, { cx: p.x + (t.x - p.x) * e, cy: p.y + (t.y - p.y) * e - Math.sin(Math.PI * e) * 14 }); if (k2 < 1) raf = requestAnimationFrame(step); else finish(); };
+    const step = (now) => { if (!document.body.contains(root)) return; const k2 = Math.min(1, (now - t0) / dur); const e = 1 - (1 - k2) ** 3; set(ball, { cx: p.x + (t.x - p.x) * e, cy: p.y + (t.y - p.y) * e - Math.sin(Math.PI * e) * 14 }); if (k2 < 1) raf = requestAnimationFrame(step); else finish(); };
     timer = setTimeout(() => { raf = requestAnimationFrame(step); }, 450);
   };
   const stop = () => { playing = false; $('rp-play').textContent = '▶ Play'; clearTimeout(timer); };
