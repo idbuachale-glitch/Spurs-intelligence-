@@ -90,7 +90,7 @@ export function matchBreakdown({ match, teamSummary, seasonPlayers }) {
       row('Share of xG from set plays', setShare, '%', null, null),
     ];
     const tags = [];
-    if (S.possession >= 58) tags.push('Dominated the ball'); else if (S.possession <= 42) tags.push('Played without the ball');
+    if (S.possession !== null && S.possession !== undefined) { if (S.possession >= 58) tags.push('Dominated the ball'); else if (S.possession <= 42) tags.push('Played without the ball'); }
     if (tilt !== null && tilt >= 62) tags.push('Pinned the opponent back'); else if (tilt !== null && tilt <= 40) tags.push('Pushed back');
     if (longShare !== null && longShare >= 9) tags.push('Direct, long-ball heavy'); else if (longShare !== null && longShare <= 5) tags.push('Short, patient passing');
     if (xgPerShot !== null && xgPerShot < 0.08 && S.shots >= 8) tags.push('Lots of low-quality shots'); else if (xgPerShot !== null && xgPerShot >= 0.15) tags.push('Worked high-quality chances');
@@ -160,8 +160,9 @@ export function matchBreakdown({ match, teamSummary, seasonPlayers }) {
   const say = (x) => out.howSpursPlayed.push(x);
   if (S && O) {
     const tilt = out.style[1]?.value;
-    say(`Spurs had ${f1(S.possession)}% of the ball${tilt !== null ? ` and ${f1(tilt)}% of the passing in the opposition half` : ''}${season?.possession?.spurs?.value ? `, against a season average of ${f1(season.possession.spurs.value)}%` : ''}.`);
-    if (S.shots !== null) say(`They took ${S.shots} shots (${S.sot ?? '—'} on target) worth ${f2(S.xg)} xG${S.shots ? `, about ${f2(S.xg / S.shots)} per shot` : ''}; ${opp} had ${O.shots} shots worth ${f2(O.xg)}.`);
+    if (S.possession !== null && S.possession !== undefined) say(`Spurs had ${f1(S.possession)}% of the ball${tilt !== null ? ` and ${f1(tilt)}% of the passing in the opposition half` : ''}${season?.possession?.spurs?.value ? `, against a season average of ${f1(season.possession.spurs.value)}%` : ''}.`);
+    const sxg = S.xg ?? t?.xg ?? null; const oxg = O.xg ?? t?.xga ?? null;
+    if (S.shots !== null && S.shots !== undefined) say(`They took ${S.shots} shots (${S.sot ?? '—'} on target)${sxg !== null ? ` worth ${f2(sxg)} xG${S.shots ? `, about ${f2(sxg / S.shots)} per shot` : ''}` : ''}; ${opp} had ${O.shots ?? '—'} shots${oxg !== null ? ` worth ${f2(oxg)} xG` : ''}.`);
     if (out.halves) {
       const a = out.halves.first; const b = out.halves.second;
       const d1 = a.xgf - a.xga; const d2 = b.xgf - b.xga;

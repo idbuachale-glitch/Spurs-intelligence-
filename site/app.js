@@ -1146,7 +1146,7 @@ VIEWS.breakdown = async (id) => {
     <div class="panel"><h2>Key moments</h2>${b.moments.length ? `<div class="timeline">${b.moments.map((x) => `<div class="tl-row ${x.side}"><span class="tl-min">${esc(x.label)}</span><span class="tl-dot ${x.kind}"></span><span>${esc(x.text)}<span class="faint small"> · ${x.side === 'spurs' ? 'Spurs' : esc(f.opponent)}</span></span></div>`).join('')}</div>` : '<p class="na">No goals or big chances recorded with minutes.</p>'}
       ${b.spells.length ? `<h3 style="margin-top:16px">Spells on top</h3><div class="chips">${b.spells.map((x) => `<span class="pill" style="border-color:${x.side === 'spurs' ? 'var(--cyan)' : 'var(--loss)'}">${esc(x.text)}</span>`).join('')}</div>` : ''}
       <p class="source">Minutes from shot data and FotMob's momentum index. Cards and substitutions have no times in the free data.</p></div>
-    <div class="panel"><h2>How Spurs played</h2>${b.howSpursPlayed.map((t) => `<p>${esc(t)}</p>`).join('')}<p class="tiny faint">${esc(b.label)}</p></div>
+    <div class="panel"><h2>How Spurs played</h2>${b.howSpursPlayed.map((t) => `<p>${esc(t)}</p>`).join('')}${b.interim ? `<p class="small" style="color:var(--warn)">${esc(b.interim)}</p>` : ''}<p class="tiny faint">${esc(b.label)}</p></div>
   </div>
 
   ${d && (d.xgRace?.length || d.momentum?.length) ? `<div class="grid two section"><div class="panel"><h2>xG race</h2>${xgRace(d.xgRace, { opp: f.opponent })}</div><div class="panel"><h2>Momentum</h2>${momentumChart(d.momentum, { opp: f.opponent })}</div></div>` : ''}

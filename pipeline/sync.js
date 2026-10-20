@@ -23,6 +23,7 @@ import { buildBrief, checkBrief } from './derive/briefing.js';
 import * as espn from './adapters/espn.js';
 import { lineupEffect, teamIdFor } from './derive/lineups.js';
 import { gameReport } from './derive/gamereport.js';
+import { matchBreakdown } from './derive/breakdown.js';
 import { squadUse } from './derive/squaduse.js';
 import { num } from './lib/validate.js';
 import * as af from './adapters/apifootball.js';
@@ -506,6 +507,35 @@ export async function runSync({ now = new Date(), force = false, siteData = SITE
       health: { ok: (d) => ok('api-football', af.label, d), fail: (e) => fail('api-football', af.label, e), espnOk: (d) => ok('espn', espn.label, d), espnFail: (e) => fail('espn', espn.label, e) } });
     if (liveRes.match) log.info('live window', { match: liveRes.match, notes: liveRes.notes });
   } catch (err) { log.error('live feed failed', { error: String(err.message || err) }); }
+
+  // ---------------- Interim match detail from the live feeds ----------------
+  // The detailed FotMob figures can take a day to be published. Until then, fill the gaps
+  // in a finished match's detail from the stored live snapshot (ESPN + API-Football), so
+  // the breakdown and report show real numbers instead of blanks. Published data wins.
+  try {
+    const MAP = { possession: 'possession', xg: 'xg', shots: 'shots', sot: 'sot', passes: 'passes', passesAcc: 'passesAcc', passPct: 'passPct', corners: 'corners', fouls: 'fouls', saves: 'saves', offsides: 'offsides', tacklesWon: 'tackles', interceptions: 'interceptions', clearances: 'clearances', shotsInBox: 'shotsInBox', longBallsAcc: 'longBalls', crossesAcc: 'crosses' };
+    for (const f of built.fixtures) {
+      const mf = built.files[`matches/${f.id}.json`]; const st = mf?.live?.stats;
+      if (!f.result || !st?.spurs) continue;
+      const d = mf.detail || (mf.detail = { source: 'live', spurs: {}, opp: {}, shots: [] });
+      let filled = 0;
+      for (const side of ['spurs', 'opp']) {
+        d[side] = d[side] || {};
+        for (const [k, lk] of Object.entries(MAP)) if ((d[side][k] === null || d[side][k] === undefined) && st[side]?.[lk] !== null && st[side]?.[lk] !== undefined) { d[side][k] = st[side][lk]; filled++; }
+      }
+      if (!filled) continue;
+      d.interimFromLive = true;
+      mf.breakdown = matchBreakdown({ match: mf, teamSummary: built.teamSummary, seasonPlayers: built.players });
+      if (mf.breakdown) {
+        // Goals with minutes from the live events when the shot feed has none yet.
+        if (!mf.breakdown.moments.some((x) => x.kind === 'goal')) {
+          for (const e of (mf.live.events || []).filter((x) => x.type === 'Goal')) mf.breakdown.moments.push({ minute: e.minute, label: `${e.minute}${e.extra ? `+${e.extra}` : ''}'`, side: e.team, kind: 'goal', text: `Goal: ${e.player || 'Unknown'}${e.assist ? ` (assist ${e.assist})` : ''}${e.detail && e.detail !== 'Normal Goal' ? `, ${e.detail.toLowerCase()}` : ''}` });
+          mf.breakdown.moments.sort((a, b) => a.minute - b.minute);
+        }
+        mf.breakdown.interim = 'Interim figures from the live match feeds (ESPN and API-Football). The full FotMob match data replaces them automatically when it is published, usually within a day.';
+      }
+    }
+  } catch (err) { log.error('interim detail failed', { error: String(err.message || err) }); }
 
   // ---------------- Game reports (De Zerbi tracker) ----------------
   // Team sheets for finished Spurs matches come from ESPN once each (cached for good);
