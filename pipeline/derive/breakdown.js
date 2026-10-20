@@ -76,18 +76,28 @@ export function matchBreakdown({ match, teamSummary, seasonPlayers }) {
     const xgPerShot = S.xg !== null && S.shots ? S.xg / S.shots : null;
     const outsideShare = S.shotsOutBox !== null && S.shots ? (S.shotsOutBox / S.shots) * 100 : null;
     const setShare = S.xgSetPlay !== null && S.xg ? (S.xgSetPlay / S.xg) * 100 : null;
-    const row = (label, value, unit, seasonAvg, leagueAvg, dp = 1) => ({ label, value: value === null ? null : round(value, dp), unit, seasonAvg: seasonAvg ?? null, leagueAvg: leagueAvg ?? null });
+    // Season averages (Spurs' other league matches) for the ratio measures, and league
+    // averages where the league totals allow it (ratio of the league per-match averages).
+    const others = (teamSummary?.matches || []).filter((m) => m.adv && m.matchId !== f.id);
+    const avgOf = (get) => { const v = others.map((m) => get(m.adv.spurs)).filter((x) => x !== null && x !== undefined && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+    const sLong = avgOf((x) => (x.longBallsAcc !== null && x.passesAcc ? (x.longBallsAcc / x.passesAcc) * 100 : null));
+    const sXgShot = avgOf((x) => (x.xg !== null && x.shots ? x.xg / x.shots : null));
+    const sOut = avgOf((x) => (x.shotsOutBox !== null && x.shots ? (x.shotsOutBox / x.shots) * 100 : null));
+    const sSet = avgOf((x) => (x.xgSetPlay !== null && x.xg ? (x.xgSetPlay / x.xg) * 100 : null));
+    const lXgShot = league.xg?.leagueAvg && league.shots?.leagueAvg ? league.xg.leagueAvg / league.shots.leagueAvg : null;
+    const lSet = league.xgSetPlay?.leagueAvg && league.xg?.leagueAvg ? (league.xgSetPlay.leagueAvg / league.xg.leagueAvg) * 100 : null;
+    const row = (label, value, unit, seasonAvg, leagueAvg, dp = 1) => ({ label, value: value === null || value === undefined ? null : round(value, dp), unit, dp, seasonAvg: seasonAvg === null || seasonAvg === undefined ? null : round(seasonAvg, dp + 1), leagueAvg: leagueAvg === null || leagueAvg === undefined ? null : round(leagueAvg, dp + 1) });
     out.style = [
       row('Possession', S.possession, '%', season?.possession?.spurs?.value, league.possession?.leagueAvg),
       row('Field tilt (share of passes in opposition half)', tilt, '%', season?.fieldTilt?.value ?? null, league.fieldTilt?.leagueAvg),
       row('Pass accuracy', S.passPct, '%', season?.passPct?.spurs?.value, league.passPct?.leagueAvg),
       row('PPDA, estimated (opponent passes per Spurs defensive action; lower = harder press)', (() => { const a = [S.tacklesWon, S.interceptions, S.fouls]; return O.ownHalf !== null && a.every((x) => x !== null) && a.reduce((x, y) => x + y, 0) > 0 ? O.ownHalf / a.reduce((x, y) => x + y, 0) : null; })(), '', season?.ppda?.value ?? null, league.ppda?.leagueAvg),
-      row('Long balls as share of accurate passes', longShare, '%', null, null),
+      row('Long balls as share of accurate passes', longShare, '%', sLong, null),
       row('Shots', S.shots, '', season?.shots?.spurs?.value, league.shots?.leagueAvg, 0),
-      row('xG per shot (chance quality)', xgPerShot, '', null, null, 3),
-      row('Shots from outside the box', outsideShare, '%', null, null),
+      row('xG per shot (chance quality)', xgPerShot, '', sXgShot, lXgShot, 3),
+      row('Shots from outside the box', outsideShare, '%', sOut, null),
       row('Successful take-ons', S.dribbles, '', season?.dribbles?.spurs?.value, league.dribbles?.leagueAvg, 0),
-      row('Share of xG from set plays', setShare, '%', null, null),
+      row('Share of xG from set plays', setShare, '%', sSet, lSet),
     ];
     const tags = [];
     if (S.possession !== null && S.possession !== undefined) { if (S.possession >= 58) tags.push('Dominated the ball'); else if (S.possession <= 42) tags.push('Played without the ball'); }
