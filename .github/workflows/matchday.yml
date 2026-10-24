@@ -34,6 +34,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          # Never stop on a single failed command: a hiccup (network, git, GitHub API) is
+          # retried on the next one-minute tick instead of ending the clock.
+          set +e +o pipefail
           # Prints "<mode> <window end ms>": mode is live (−100…+155 min), near (−24 h…+6 h) or none.
           state() {
             git fetch -q --depth=1 origin main && git checkout -q origin/main -- site/data/seasons.json site/data/seasons 2>/dev/null || true
@@ -43,10 +46,13 @@ jobs:
               const now=Date.now();let mode="none",end=0;
               for(const f of fx){ if(!f.kickoff||f.friendly) continue; const t=(now-Date.parse(f.kickoff))/60000;
                 if(t>=-1440&&t<=360){ end=Math.max(end,Date.parse(f.kickoff)+360*60000); if(t>=-100&&t<=155) mode="live"; else if(mode!=="live") mode="near"; } }
-              process.stdout.write(mode+" "+end);'
+              process.stdout.write(mode+" "+end+"\n");'
           }
           started=$(date +%s)
-          read mode end < <(state)
+          refresh() { local s; s=$(state 2>/dev/null); case "$s" in live\ *|near\ *|none\ *) mode=${s%% *}; end=${s##* } ;; *) echo "Could not read fixtures this tick; keeping mode '$mode'." ;; esac; }
+          mode=""; end=0; refresh
+          for i in 1 2 3; do [ -n "$mode" ] && break; sleep 20; refresh; done
+          [ -z "$mode" ] && mode=none
           if [ "$mode" = "none" ]; then echo "No Spurs match within 24 hours; nothing to do."; exit 0; fi
           echo "Match period until $(date -u -d @$((end/1000)))"
           last=0
@@ -63,7 +69,7 @@ jobs:
               exit 0
             fi
             sleep 60
-            read mode end < <(state)
+            refresh
           done
           gh workflow run sync.yml -R "$REPO" --ref main || true
           echo "Match period over."
