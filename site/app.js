@@ -31,7 +31,14 @@ async function boot() {
   sel.addEventListener('change', () => { state.season = sel.value; try { localStorage.setItem('si-season', sel.value); } catch { /* ignore */ } route(); });
   buildNav();
   setupSearch();
-  document.getElementById('sidebar-foot').innerHTML = `Checked ${esc(ago(state.status.checkedAt || state.meta.generatedAt))}<br>${state.status.healthy === false ? '<span style="color:var(--loss)">Source problem — see Data sources</span>' : (state.status.warnings || []).length ? 'Some sources retrying' : 'All sources healthy'}`;
+  const paintFoot = () => {
+    const checked = state.status.checkedAt || state.meta.generatedAt;
+    const hrs = (Date.now() - new Date(checked)) / 3600e3;
+    const lvl = state.status.healthy === false ? 'bad' : hrs > 6 ? 'warn' : (state.status.warnings || []).length ? 'warn' : 'ok';
+    const note = state.status.healthy === false ? 'Source problem: see Data sources' : hrs > 6 ? 'Updates running late' : (state.status.warnings || []).length ? 'Some sources retrying' : 'All sources healthy';
+    document.getElementById('sidebar-foot').innerHTML = `<a href="#/sources" class="foot-pill ${lvl}"><i></i><span><strong>Checked ${esc(ago(checked))}</strong><small>${esc(note)}</small></span></a>`;
+  };
+  paintFoot(); clearInterval(window.__footT); window.__footT = setInterval(paintFoot, 60000);
   window.addEventListener('hashchange', route);
   route();
   // Installed app: work offline, and refresh when reopened after a while.

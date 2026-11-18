@@ -790,3 +790,11 @@ h2 .tcrest, h3 .tcrest { width: 24px; height: 24px; vertical-align: -5px; }
 .su-tiles .val { font-size: 1.5rem; }
 .su-tiles .lbl { font-size: 0.78rem; }
 .su-tiles .ctx { font-size: 0.68rem; }
+.foot-pill { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: color-mix(in srgb, var(--cyan) 6%, var(--panel)); color: var(--text); text-decoration: none; }
+.foot-pill:hover { text-decoration: none; border-color: var(--cyan); }
+.foot-pill i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--win); box-shadow: 0 0 8px var(--win); }
+.foot-pill.warn i { background: var(--draw); box-shadow: 0 0 8px var(--draw); }
+.foot-pill.bad i { background: var(--loss); box-shadow: 0 0 8px var(--loss); }
+.foot-pill span { display: flex; flex-direction: column; line-height: 1.3; }
+.foot-pill strong { font-size: 0.9rem; font-weight: 600; }
+.foot-pill small { font-size: 0.74rem; color: var(--muted); }
