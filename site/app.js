@@ -31,7 +31,7 @@ async function boot() {
   sel.addEventListener('change', () => { state.season = sel.value; try { localStorage.setItem('si-season', sel.value); } catch { /* ignore */ } route(); });
   buildNav();
   setupSearch();
-  document.getElementById('sidebar-foot').innerHTML = `Updated ${esc(ago(state.meta.generatedAt))}<br>${state.status.healthy === false ? '<span style="color:var(--loss)">Source problem — see Data sources</span>' : (state.status.warnings || []).length ? 'Some sources retrying' : 'All sources healthy'}`;
+  document.getElementById('sidebar-foot').innerHTML = `Checked ${esc(ago(state.status.checkedAt || state.meta.generatedAt))}<br>${state.status.healthy === false ? '<span style="color:var(--loss)">Source problem — see Data sources</span>' : (state.status.warnings || []).length ? 'Some sources retrying' : 'All sources healthy'}`;
   window.addEventListener('hashchange', route);
   route();
   // Installed app: work offline, and refresh when reopened after a while.
@@ -103,8 +103,10 @@ async function route() {
 
 function banners() {
   const out = [];
-  const age = (Date.now() - new Date(state.meta.generatedAt)) / 3600e3;
-  if (age > 3) out.push(`<div class="banner warn">The data was last refreshed ${esc(ago(state.meta.generatedAt))}. Automatic updates may be delayed; the figures shown are the last valid set.</div>`);
+  // When the site last checked its sources (every run), not when the football data last changed.
+  const checked = state.status.checkedAt || state.meta.generatedAt;
+  const age = (Date.now() - new Date(checked)) / 3600e3;
+  if (age > 6) out.push(`<div class="banner warn">The site last checked for new data ${esc(ago(checked))}. Automatic updates are running late; the figures shown are the last valid set.</div>`);
   for (const w of state.status.warnings || []) if (w.level === 'error') out.push(`<div class="banner error">${esc(w.text)}</div>`);
   if (state.season !== state.seasons.current) out.push(`<div class="banner info">Viewing the archived ${state.season.replace('-', '/')} season. <a href="#" id="to-current">Switch to ${state.seasons.current.replace('-', '/')}</a></div>`);
   return out.join('');
